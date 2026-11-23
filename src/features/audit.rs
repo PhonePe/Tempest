@@ -195,8 +195,9 @@ pub(crate) struct AuditRecord {
 struct AuditCommand {
     record_json: Vec<u8>,
     estimated_bytes: usize,
-    _queue_permit: OwnedSemaphorePermit,
+    // Fields drop in order: free bytes before the queue permit `wait_idle` observes.
     _byte_permit: AuditBytePermit,
+    _queue_permit: OwnedSemaphorePermit,
 }
 
 /// Maximum JSONL bytes one validated audit entry may occupy, including newline.
@@ -368,8 +369,9 @@ pub(crate) struct AuditWriter {
 #[derive(Debug)]
 pub(crate) struct AuditReservation {
     sender: SyncSender<AuditCommand>,
-    queue_permit: OwnedSemaphorePermit,
+    // Fields drop in order: free bytes before the queue permit `wait_idle` observes.
     byte_permit: AuditBytePermit,
+    queue_permit: OwnedSemaphorePermit,
     status: Arc<AuditWriterStatus>,
 }
 
@@ -526,8 +528,8 @@ impl AuditReservation {
         let command = AuditCommand {
             record_json,
             estimated_bytes,
-            _queue_permit: self.queue_permit,
             _byte_permit: self.byte_permit,
+            _queue_permit: self.queue_permit,
         };
         if let Err(error) = self.sender.try_send(command) {
             self.status.fail();
@@ -1515,8 +1517,10 @@ fn same_audit_file_identity(left: &fs::Metadata, right: &fs::Metadata) -> bool {
 }
 
 #[cfg(not(unix))]
-fn same_audit_file_identity(left: &fs::Metadata, right: &fs::Metadata) -> bool {
-    left.len() == right.len() && left.modified().ok() == right.modified().ok()
+fn same_audit_file_identity(earlier: &fs::Metadata, later: &fs::Metadata) -> bool {
+    // Allow concurrent append growth. Creation time is only a heuristic: NTFS
+    // can reuse it for a replacement at the same path (file tunneling).
+    earlier.created().ok() == later.created().ok() && earlier.len() <= later.len()
 }
 
 fn sync_parent_directory(path: &Path) -> Result<(), TempestError> {

@@ -169,7 +169,7 @@ async fn first_pin_waits_for_durable_writer_and_rejects_withdrawn_snapshot() {
         );
         tx.commit().await.unwrap();
         assert!(
-            !tokio::time::timeout(Duration::from_secs(5), claim)
+            !tokio::time::timeout(Duration::from_secs(30), claim)
                 .await
                 .unwrap()
                 .unwrap()

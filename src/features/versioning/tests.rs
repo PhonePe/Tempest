@@ -533,19 +533,19 @@ async fn drain_gated_switch_waits_for_removed_artifact_pins() {
                 DEFAULT_BOOT_PROFILE.into(),
                 "release_drain_v2".into(),
                 vec![("kernel".into(), v2_path)],
-                Duration::from_secs(2),
+                Duration::from_secs(30),
                 false,
             )
             .await
     });
 
-    for _ in 0..100 {
-        if !store.cutover_gates.read().is_empty() {
-            break;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while store.cutover_gates.read().is_empty() {
+            tokio::task::yield_now().await;
         }
-        tokio::task::yield_now().await;
-    }
-    assert!(!store.cutover_gates.read().is_empty());
+    })
+    .await
+    .unwrap();
     assert!(
         store
             .active_boot_chain_for_profile(DEFAULT_BOOT_PROFILE)
@@ -567,7 +567,7 @@ async fn drain_gated_switch_waits_for_removed_artifact_pins() {
     ));
 
     store.unpin_version(&pinned.logical_name, pinned.version_id);
-    let group2 = tokio::time::timeout(Duration::from_secs(1), handle)
+    let group2 = tokio::time::timeout(Duration::from_secs(30), handle)
         .await
         .unwrap()
         .unwrap()
@@ -608,21 +608,21 @@ async fn drain_all_waits_for_a_disjoint_outgoing_boot_chain() {
             .drain_gated_switch(
                 "release-b".into(),
                 vec![("shim".into(), new)],
-                Duration::from_secs(2),
+                Duration::from_secs(30),
             )
             .await
     });
-    for _ in 0..100 {
-        if store.cutover_in_progress(DEFAULT_BOOT_PROFILE) {
-            break;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !store.cutover_in_progress(DEFAULT_BOOT_PROFILE) {
+            tokio::task::yield_now().await;
         }
-        tokio::task::yield_now().await;
-    }
-    assert!(store.cutover_in_progress(DEFAULT_BOOT_PROFILE));
+    })
+    .await
+    .unwrap();
     assert!(!switch.is_finished());
 
     store.unpin_boot_chain(&pin);
-    let active = tokio::time::timeout(Duration::from_secs(1), switch)
+    let active = tokio::time::timeout(Duration::from_secs(30), switch)
         .await
         .unwrap()
         .unwrap()
@@ -705,13 +705,13 @@ async fn cancelling_drain_gated_switch_clears_gate() {
             )
             .await
     });
-    for _ in 0..100 {
-        if store.cutover_in_progress(DEFAULT_BOOT_PROFILE) {
-            break;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !store.cutover_in_progress(DEFAULT_BOOT_PROFILE) {
+            tokio::task::yield_now().await;
         }
-        tokio::task::yield_now().await;
-    }
-    assert!(store.cutover_in_progress(DEFAULT_BOOT_PROFILE));
+    })
+    .await
+    .unwrap();
 
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());

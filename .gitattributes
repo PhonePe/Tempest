@@ -1,0 +1,29 @@
+# Force LF line endings for every text file so all platforms (especially
+# Windows, where Git defaults to CRLF) check out identical bytes. Binary files
+# are listed last and kept untouched. This keeps line-ending-sensitive checks
+# (e.g. the license-header test) passing on every OS.
+* text=auto eol=lf
+
+# Explicitly mark common binary types so they are never treated as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.jar binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.bin binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.mp4 binary
+*.webm binary
+*.mp3 binary

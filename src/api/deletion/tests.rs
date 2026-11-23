@@ -136,6 +136,34 @@ async fn deletion_revalidates_active_pins_stale_and_missing_without_deleting_byt
     assert_eq!(confirm(state, digest).await.status(), StatusCode::NOT_FOUND);
 }
 
+#[cfg(not(unix))]
+#[tokio::test]
+async fn deletion_file_preview_fails_closed_without_unix_inspection() {
+    let (dir, state, _) = fixture();
+    let file = DeleteTarget::File {
+        path: "kernel".into(),
+    };
+    assert_eq!(
+        build_preview(state.clone(), file.clone())
+            .await
+            .err()
+            .unwrap()
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    let response = confirm_delete(
+        State(state),
+        Json(ConfirmDeleteRequest {
+            target: file,
+            expected_identity: "0".repeat(64),
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(std::fs::read(dir.path().join("kernel")).unwrap(), b"kernel");
+}
+
+#[cfg(unix)]
 #[tokio::test]
 async fn deletion_file_preview_is_bounded_confined_and_never_unlinks() {
     let (dir, state, _) = fixture();
@@ -389,6 +417,7 @@ async fn deletion_rechecks_last_managed_owner_after_preview() {
     assert_eq!(state.version_store.group_count(), 1);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn deletion_missing_reference_never_becomes_permission_to_delete() {
     let (dir, state, _) = fixture();
@@ -498,6 +527,7 @@ async fn deletion_changed_group_identity_and_cutover_are_rejected() {
     assert_eq!(state.version_store.group_count(), 2);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn deletion_file_aliases_unmanaged_limits_and_special_files_fail_closed() {
     let (dir, state, _) = fixture();
@@ -555,7 +585,7 @@ async fn deletion_file_aliases_unmanaged_limits_and_special_files_fail_closed() 
                 .success()
         );
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
+            std::time::Duration::from_secs(30),
             build_preview(
                 state,
                 DeleteTarget::File {

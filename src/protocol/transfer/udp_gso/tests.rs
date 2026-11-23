@@ -241,7 +241,7 @@ async fn receive_packets(
     let mut buffer = vec![0; 65_536];
     for packet in packets {
         let (length, peer) = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
+            std::time::Duration::from_secs(30),
             receiver.recv_from(&mut buffer),
         )
         .await

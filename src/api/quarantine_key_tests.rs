@@ -30,10 +30,12 @@ fn quarantine_key_preserves_normalization_and_canonical_fallback() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
     std::fs::write(root.join("file.img"), b"fixture").unwrap();
-    let aliased = root.join("missing/../file.img");
+    // Windows verbatim (canonical) paths resolve `..` on join, so use the lexical root.
+    let lexical_root = directory.path();
+    let aliased = lexical_root.join("missing/../file.img");
     // Lexical prefix behavior is intentionally unchanged, not new authority.
     assert_eq!(
-        &*quarantine_key_for_http_path(&aliased, &root).unwrap(),
+        &*quarantine_key_for_http_path(&aliased, lexical_root).unwrap(),
         "missing/../file.img"
     );
     #[cfg(unix)]

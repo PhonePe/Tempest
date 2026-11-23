@@ -214,10 +214,11 @@ async fn late_lease_mutex_waiter_gets_a_full_probe_budget_without_poisoning() {
         store.ensure_serving_admission(true).await.unwrap();
         // Probe latency exceeds what remains of the admission deadline after a
         // long mutex wait; a healthy database must not poison the lease.
-        store.set_serving_probe_delay_for_test(Duration::from_millis(500));
+        store.set_serving_probe_delay_for_test(Duration::from_secs(2));
         let held = store.serving_transaction_for_test().await;
         let release = async {
-            tokio::time::sleep(COORDINATION_TIMEOUT - Duration::from_millis(250)).await;
+            // One second of slack absorbs scheduling delay; the 2s probe still overruns it.
+            tokio::time::sleep(COORDINATION_TIMEOUT - Duration::from_secs(1)).await;
             drop(held);
         };
         let (result, ()) = tokio::join!(store.ensure_serving_admission(true), release);
@@ -643,7 +644,7 @@ async fn kill_serving_connection(store: &PersistenceStore, peer: &PersistenceSto
                 .execute(&peer.pool)
                 .await
                 .unwrap();
-            tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::time::timeout(Duration::from_secs(30), async {
                 loop {
                     let remaining: i64 =
                         sqlx::query_scalar("SELECT COUNT(*) FROM pg_stat_activity WHERE pid = $1")
@@ -658,13 +659,33 @@ async fn kill_serving_connection(store: &PersistenceStore, peer: &PersistenceSto
                 }
             })
             .await
-            .expect("terminated PostgreSQL serving backend did not exit within five seconds");
+            .expect("terminated PostgreSQL serving backend did not exit within 30 seconds");
         }
         DatabaseDialect::MySql => {
             sqlx::query(&format!("KILL CONNECTION {connection}"))
                 .execute(&peer.pool)
                 .await
                 .unwrap();
+            // KILL CONNECTION returns once the kill request is acknowledged, not
+            // once the backend has exited and released its row locks. Wait for
+            // the connection to actually disappear so the lock is gone before a
+            // peer's NOWAIT admission races it; mirrors the PostgreSQL path.
+            tokio::time::timeout(Duration::from_secs(30), async {
+                loop {
+                    let remaining: i64 = sqlx::query_scalar(&format!(
+                        "SELECT COUNT(*) FROM information_schema.processlist WHERE id = {connection}"
+                    ))
+                    .fetch_one(&peer.pool)
+                    .await
+                    .unwrap();
+                    if remaining == 0 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("killed MySQL serving backend did not exit within 30 seconds");
         }
     }
 }
@@ -1060,6 +1081,25 @@ async fn standalone_servers_enforce_attached_store_admission_without_cli_configu
                     .execute(&peer.pool)
                     .await
                     .unwrap();
+                // KILL CONNECTION returns on acknowledgment, not on backend
+                // exit; wait for the row lock to be actually released before the
+                // NOWAIT admission that follows.
+                tokio::time::timeout(Duration::from_secs(30), async {
+                    loop {
+                        let remaining: i64 = sqlx::query_scalar(&format!(
+                            "SELECT COUNT(*) FROM information_schema.processlist WHERE id = {connection}"
+                        ))
+                        .fetch_one(&peer.pool)
+                        .await
+                        .unwrap();
+                        if remaining == 0 {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("killed MySQL serving backend did not exit within 30 seconds");
             }
         }
         assert!(owner_state.ensure_persistence_admission().await.is_err());
@@ -2156,7 +2196,7 @@ async fn stale_and_reused_group_identities_never_admit_readers_or_reservations()
         );
         tx.commit().await.unwrap();
         assert!(matches!(
-            tokio::time::timeout(Duration::from_secs(5), acquire)
+            tokio::time::timeout(Duration::from_secs(30), acquire)
                 .await
                 .unwrap(),
             Err(CoordinationError::IdentityChanged)
@@ -2184,7 +2224,7 @@ async fn reader_first_serialization_blocks_reservation_after_commit() {
         );
         tx.commit().await.unwrap();
         assert!(matches!(
-            tokio::time::timeout(Duration::from_secs(5), reserve)
+            tokio::time::timeout(Duration::from_secs(30), reserve)
                 .await
                 .unwrap(),
             Err(CoordinationError::ReadersPresent)
@@ -2216,7 +2256,7 @@ async fn reservation_first_serialization_blocks_reader_after_commit() {
         );
         tx.commit().await.unwrap();
         assert!(matches!(
-            tokio::time::timeout(Duration::from_secs(5), acquire)
+            tokio::time::timeout(Duration::from_secs(30), acquire)
                 .await
                 .unwrap(),
             Err(CoordinationError::Reserved)

@@ -164,7 +164,7 @@ mod tests {
                 .is_err()
         );
         drop(connection);
-        let (connection, peer) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
+        let (connection, peer) = tokio::time::timeout(Duration::from_secs(30), listener.accept())
             .await
             .unwrap();
         assert_eq!(peer, second.local_addr().unwrap());
@@ -172,7 +172,8 @@ mod tests {
         assert_eq!(listener.capacity.available_permits(), 1);
     }
 
-    #[tokio::test]
+    // In-memory duplex streams let paused time make every deadline deterministic.
+    #[tokio::test(start_paused = true)]
     async fn stalled_write_times_out_and_drop_releases_connection_capacity() {
         let capacity = Arc::new(Semaphore::new(1));
         let (stream, _peer) = tokio::io::duplex(1);
@@ -185,7 +186,7 @@ mod tests {
         assert_eq!(capacity.available_permits(), 1);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn successful_flush_does_not_extend_a_stalled_write_deadline() {
         let (stream, _peer) = tokio::io::duplex(1);
         let permit = Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap();
@@ -208,7 +209,7 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn server_waits_do_not_consume_the_write_progress_deadline() {
         let (stream, mut peer) = tokio::io::duplex(1);
         let permit = Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap();

@@ -49,7 +49,7 @@ fn rule_for(path: &str) -> Option<Rule> {
         || name.ends_with(".json")
         || matches!(
             name,
-            ".gitignore" | ".dockerignore" | ".containerignore" | ".gitkeep"
+            ".gitignore" | ".dockerignore" | ".containerignore" | ".gitkeep" | ".gitattributes"
         );
     if exempt_path || exempt_name {
         return Some(Rule::Exempt);
@@ -105,6 +105,25 @@ fn render(style: Style) -> String {
     out
 }
 
+/// Normalizes CRLF to LF so the header check is independent of how the working
+/// copy was checked out (Windows defaults to CRLF when no `eol` is forced).
+/// The expected header is always LF, so a CRLF file would otherwise never
+/// match even though it carries the same header text.
+fn normalize_line_endings(content: &str) -> String {
+    if !content.contains("\r\n") {
+        return content.to_owned();
+    }
+    let mut out = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(index) = rest.find("\r\n") {
+        out.push_str(&rest[..index]);
+        out.push('\n');
+        rest = &rest[index + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Splits off a first line that must stay first: a shebang or a Dockerfile
 /// parser directive.
 fn split_prefix(content: &str) -> (&str, &str) {
@@ -119,7 +138,10 @@ fn split_prefix(content: &str) -> (&str, &str) {
 fn with_header(content: &str, style: Style) -> Option<String> {
     let header = render(style);
     let (prefix, body) = split_prefix(content);
-    if body.starts_with(&header) {
+    // Compare against LF-normalized bytes so a CRLF working copy (Windows)
+    // still recognizes an LF-authored header.
+    let normalized = normalize_line_endings(body);
+    if normalized.starts_with(&header) {
         return None;
     }
     Some(format!("{prefix}{header}{body}"))
@@ -159,7 +181,8 @@ fn tracked_files_carry_the_license_header() {
         if !file.exists() {
             continue;
         }
-        let content = fs::read_to_string(&file).expect("read tracked text file");
+        let content =
+            normalize_line_endings(&fs::read_to_string(&file).expect("read tracked text file"));
         let Some(updated) = with_header(&content, style) else {
             continue;
         };
@@ -191,6 +214,21 @@ fn header_follows_shebang() {
          # SPDX-License-Identifier: Apache-2.0\n\nset -eu\n"
     );
     assert_eq!(with_header(&updated, Style::Hash), None);
+}
+
+/// A file checked out with CRLF (Windows default) must still be recognized as
+/// carrying the header; otherwise every non-exempt file is flagged as missing.
+#[test]
+fn crlf_working_copy_is_recognized() {
+    let header_lf = render(Style::Html);
+    let header_crlf = header_lf.replace('\n', "\r\n");
+    let crlf_content = format!("{header_crlf}# Tempest\r\n");
+    // The header is present (just with CRLF), so no rewrite is needed.
+    assert_eq!(with_header(&crlf_content, Style::Html), None);
+
+    // A CRLF file that genuinely lacks the header is still detected.
+    let no_header = "just some text\r\nmore text\r\n";
+    assert!(with_header(no_header, Style::Html).is_some());
 }
 
 #[test]
