@@ -1,0 +1,27 @@
+target/
+**/cargo-target/
+**/__pycache__/
+*.py[cod]
+
+/.tmp
+/dist
+/demo/l2-flat/build/
+demo/l2-flat/downloads/
+demo/l2-flat/audit/
+demo/l2-flat/tftpboot/
+/fuzz/artifacts/
+/fuzz/corpus/
+/protocol-bench.txt
+/tempest.strace*
+/tempest-strace-summary/
+/focal-vmlinuz-*.html
+/focal-vmlinuz-*.md
+/suite-http-size-suite-*.html
+/suite-http-size-suite-*.json
+/suite-http-size-suite-*.md
+
+.DS_Store
+# Local SonarQube scanner state
+.scannerwork/
+# Local benchmark output
+/benchmarks/results/

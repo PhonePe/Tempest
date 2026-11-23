@@ -1,0 +1,16 @@
+{#- SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd. -#}
+{#- SPDX-License-Identifier: Apache-2.0 -#}
+{% from "tempest/map.jinja" import tempest with context -%}
+{% set grafana = tempest.observability.grafana -%}
+{% set provider = grafana.dashboard_provider -%}
+# Managed by Salt. Do not edit locally.
+apiVersion: 1
+providers:
+  - name: {{ provider.name | json }}
+    orgId: 1
+    folder: {{ provider.folder | json }}
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: {{ grafana.dashboard_dir | json }}

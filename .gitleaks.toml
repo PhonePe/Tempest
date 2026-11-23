@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+# gitleaks configuration: default rules plus the documented placeholder values.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Demo, example, and test placeholder credentials"
+regexes = [
+    '''tempest-demo-key-2026''',
+    '''replace-with-at-least-16-characters''',
+    '''strong-api-key-123456''',
+]

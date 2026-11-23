@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "tempest-control-client"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Typed control-plane client for Tempest network boot artifact servers"
+readme = "README.md"
+repository = "https://github.com/PhonePe/Tempest"
+keywords = ["tempest", "provisioning", "network-boot", "pxe", "api-client"]
+categories = ["api-bindings", "network-programming"]
+publish = false
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+    "macros",
+    "net",
+    "rt-multi-thread",
+    "io-util",
+] }

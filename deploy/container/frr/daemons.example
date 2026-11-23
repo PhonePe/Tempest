@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+# Render to /etc/frr/daemons on each host. Leave unused routing daemons off.
+zebra=yes
+bgpd=yes
+staticd=no
+bfdd=no
+ospfd=no
+ospf6d=no
+isisd=no
+ripd=no
+ripngd=no
+pimd=no
+pim6d=no
+ldpd=no
+nhrpd=no
+eigrpd=no
+babeld=no
+sharpd=no
+pbrd=no
+vrrpd=no
+pathd=no
+fabricd=no
+vtysh_enable=yes

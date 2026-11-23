@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example systemd unit for a Tempest release archive. It matches the Salt
+# formula defaults: binary at /usr/local/bin/tempest, configuration in
+# /etc/tempest, a read-only /tftpboot artifact root, and a `tempest` system user.
+# Create the user and directories first (see INSTALL.md), then adjust paths and
+# limits for your deployment.
+
+[Unit]
+Description=Tempest TFTP and HTTP boot artifact server
+Documentation=https://github.com/PhonePe/Tempest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tempest
+Group=tempest
+ExecStart=/usr/local/bin/tempest --config /etc/tempest/tempest.toml
+EnvironmentFile=-/etc/tempest/tempest.env
+Restart=on-failure
+RestartSec=5
+# SIGTERM drains in-flight transfers before exit.
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+# Bind UDP 69 without running as root.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=-/tftpboot
+# Kernel, device and namespace isolation; Tempest needs none of these.
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# IPv4/IPv6 for TFTP, HTTP and SQL; AF_UNIX for local database sockets;
+# AF_NETLINK for libc address lookups.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Creates writable, user-owned /var/log/tempest and /run/tempest.
+LogsDirectory=tempest
+RuntimeDirectory=tempest
+
+[Install]
+WantedBy=multi-user.target

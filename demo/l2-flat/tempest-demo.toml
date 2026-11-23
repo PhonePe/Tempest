@@ -1,0 +1,106 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+[server]
+bind = "0.0.0.0"
+port = 6969
+root = "/tftpboot"
+max_concurrent_transfers = 2
+tftp_requests_per_ip_per_second = 50
+http_requests_per_ip_per_second = 100
+max_boot_sessions = 1000
+default_block_size = 512
+max_window_size = 64
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+listener_receive_buffer_bytes = 4194304
+transfer_socket_buffer_bytes = 0
+log_level = "info"
+json_logging = false
+bandwidth_governor_enabled = true
+total_bandwidth_bytes_per_second = 200000
+
+[api]
+bind = "0.0.0.0"
+port = 8080
+enable_metrics = true
+metrics_require_api_key = false
+enable_versions_api = true
+enable_audit_api = true
+enable_native_http_boot = true
+native_http_boot_filename = "boot.efi"
+artifact_cache_max_bytes = 67108864
+artifact_cache_max_file_bytes = 16777216
+api_key = "tempest-demo-key-2026"
+
+[[boot_phases]]
+name = "PXE_ROM"
+pattern = '(?i)(pxelinux\.0|[^/]+\.kpxe|[^/]+\.efi)$'
+block_size = 512
+max_window_size = 1
+retransmit_interval_ms = 200
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1000
+max_retries = 10
+
+[[boot_phases]]
+name = "KERNEL"
+pattern = '(?i)(vmlinuz|bzImage|kernel)'
+block_size = 8192
+max_window_size = 16
+retransmit_interval_ms = 500
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 2000
+max_retries = 5
+
+[[boot_phases]]
+name = "INITRD"
+pattern = '(?i)(initrd|initramfs)'
+block_size = 8192
+max_window_size = 16
+retransmit_interval_ms = 500
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 2000
+max_retries = 5
+
+[[boot_phases]]
+name = "OS_IMAGE"
+pattern = '(?i)\.(img|iso|squashfs)$'
+block_size = 8192
+max_window_size = 8
+retransmit_interval_ms = 800
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+
+[[boot_phases]]
+name = "CONFIG"
+pattern = '(?i)(boot\.conf|grub\.cfg|pxelinux\.cfg|syslinux\.cfg|\.ipxe$|\.c32$|ldlinux\.e64$)'
+block_size = 512
+max_window_size = 1
+retransmit_interval_ms = 200
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1000
+max_retries = 10
+
+# Omit the phase map to disable per-transfer DSCP socket marking.
+[dscp]
+ecn_enabled = false
+
+[dscp.phase_dscp]
+PXE_ROM = 46
+KERNEL = 34
+INITRD = 26
+OS_IMAGE = 18
+CONFIG = 8
+
+[audit]
+enabled = true
+log_path = "/var/log/tempest/audit.jsonl"
+
+[persistence]
+enabled = true
+database_url = "env:TEMPEST_DATABASE_URL"
+sync_interval_secs = 2

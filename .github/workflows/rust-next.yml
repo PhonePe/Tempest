@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Upcoming Rust
+
+# Early warning before the pinned toolchain (rust-toolchain.toml) is bumped:
+# build, lint and test on the newest stable and beta compilers. Failures here
+# do not block merges; fix them in the next toolchain-bump change.
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upcoming:
+    name: Rust ${{ matrix.channel }}
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.channel }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install Rust ${{ matrix.channel }}
+        run: rustup toolchain install "${RUSTUP_TOOLCHAIN}" --profile minimal --component clippy
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          key: ${{ matrix.channel }}
+      - name: Strict Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --locked --workspace --lib --tests --all-features

@@ -1,0 +1,224 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+# Tempest TFTP Server Configuration
+
+[server]
+bind = "0.0.0.0"
+port = 69
+# Zero selects one shard per available CPU on Linux (bounded to 64) and one on
+# other platforms. Set one explicitly to force the portable listener path.
+listener_shards = 0
+root = "/tftpboot"
+# Zero gives immediate visibility for unmanaged file replacement. On a trusted,
+# benchmark-style immutable root, 100-250 ms removes per-request open/fstat cost.
+unmanaged_cache_validation_interval_ms = 0
+# Shared immutable snapshots are byte-bounded. Increase the per-file limit for
+# digest-verified managed images only when the host memory budget permits it.
+hot_artifact_cache_max_bytes = 67108864       # 64 MiB total
+hot_artifact_cache_max_file_bytes = 2097152   # 2 MiB per artifact
+max_concurrent_transfers = 500
+# Combined queued/reserved/running TFTP RRQ/WRQ per source IP through transport
+# completion; all source ports share the quota. Duplicate RRQs on the same live
+# client TID add no permit. TID and quota release precede terminal audit work;
+# audit capacity remains separately bounded.
+# Default 16; valid 1-10000; zero cannot disable. Independent of the global cap
+# (a smaller global cap is valid). Shared across local shards, not nodes; no HTTP.
+# Excess gets ERROR 0 "Client transfer limit reached" before global/queue admission.
+# Shared NAT clients compete here; this is partial isolation, not fair scheduling.
+max_tftp_transfers_per_ip = 16
+tftp_requests_per_ip_per_second = 50
+http_requests_per_ip_per_second = 100
+max_boot_sessions = 100000
+default_block_size = 512
+max_window_size = 64
+# Opt-in Linux 4.18+ UDP_SEGMENT; startup probes an unbound socket in server.bind's
+# address family and reports the underlying error if the probe fails.
+# Unsupported-protocol failures disable it for that address family until restart.
+# EIO and MTU/size failures disable it only for that transfer; later transfers retry.
+# Validate firmware and network behavior.
+udp_segmentation_offload = false
+# RFC 2349 requires accepted timeout values to be used exactly. False omits all
+# timeout requests regardless of the ceiling; unnegotiated timeout uses the
+# bounded adaptive policy below. Other requested options keep their own rules.
+accept_client_timeout = true
+# Default 255; valid 1-255, even when accept_client_timeout is false. When true,
+# accept only 1..ceiling exactly; larger/invalid requests are omitted, not clamped.
+# Negotiation ceiling only: NOT an inactivity timeout or total transfer timer.
+max_client_timeout_secs = 255
+# Absolute RRQ/WRQ network deadline from transfer entry, including preparation
+# elapsed time: 1-86400 seconds inclusive; zero cannot disable it. Raise this for
+# large/slow transfers. Progress, duplicate packets, and retries do not reset it.
+# Covers read OACK/DATA (including scheduling/pacing), write DATA reception, and
+# final ACK dally. Unabortable setup is not interrupted; final durable WRQ
+# flush/publication may finish if the entire file arrived before the deadline.
+# Accepted RFC timeout values stay unchanged: the deadline can end a transfer,
+# not trigger an early retransmission. Longer caps retain resources longer;
+# neither this nor the per-IP quota guarantees fairness under sustained load.
+# Server policy, not an RFC-mandated lifetime/retry count. Expiry attempts one
+# nonblocking TFTP ERROR; already published uploads still attempt a final ACK.
+# See DEPLOYMENT.md for an illustrative explicit long-transfer profile requiring
+# firmware/network validation; the default remains 300, not extended support.
+max_transfer_duration_secs = 300
+# Internal adaptive RTO policy used only when RFC 2349 timeout is not negotiated.
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+# Retry budget is server-controlled even with negotiated timeout; boot phases
+# can override retry count and adaptive intervals. No minimum-throughput eviction.
+max_retries = 5
+# The operating system may clamp requested socket buffers to its sysctl limits.
+listener_receive_buffer_bytes = 4194304
+# Zero keeps OS defaults and avoids two setsockopt calls per short transfer.
+# Set a nonzero value only when packet-drop evidence justifies the tuning.
+transfer_socket_buffer_bytes = 0
+log_level = "info"
+json_logging = false
+
+# Bandwidth governor — caps aggregate TFTP output to the server NIC ceiling.
+# Enable for constrained provisioning networks (1Gbps management NIC).
+# bandwidth_governor_enabled = true
+# total_bandwidth_bytes_per_second = 125000000  # 1 Gbps = 125 MB/s
+
+[api]
+bind = "127.0.0.1"
+port = 8080
+# Includes idle keep-alive sockets; excess connections wait in the OS backlog.
+max_connections = 1024
+# Absolute deadlines for headers/idle keep-alive and, separately, request bodies.
+# Application work and response delivery are excluded. Valid range: 1-3600.
+read_timeout_secs = 30
+# Applies only while a socket cannot accept bytes, not while Tempest is pacing.
+# Zero disables the stalled-write deadline for firmware requiring that policy.
+write_timeout_secs = 120
+enable_metrics = true
+# Keep metrics authenticated unless a firewall or private observability network
+# restricts access to trusted Prometheus scrapers.
+metrics_require_api_key = true
+enable_versions_api = true
+enable_audit_api = true
+# Native UEFI HTTP Boot is source-IP session authorized and disabled by default.
+# When enabled, DHCP may advertise one stable URI such as
+# http://192.0.2.10:8080/boot/v1/boot.efi to every compatible client. Each boot
+# profile must publish this exact logical name in its managed release group.
+enable_native_http_boot = false
+native_http_boot_filename = "boot.efi"
+# Separate from the TFTP hot cache: only digest-pinned managed artifacts enter.
+artifact_cache_max_bytes = 67108864       # 64 MiB total
+artifact_cache_max_file_bytes = 16777216  # 16 MiB per artifact
+# Authentication is required even on loopback because port forwarding and
+# reverse proxies can expose a loopback listener.
+api_key = "env:TEMPEST_API_KEY"
+# Only these direct socket peers may supply a single X-Forwarded-For address.
+# trusted_proxy_ips = ["127.0.0.1"]
+
+# Boot phase classification rules.
+[[boot_phases]]
+name = "PXE_ROM"
+pattern = '(?i)(pxelinux\.0|undionly\.kpxe|ipxe\.\w+)$'
+block_size = 512
+max_window_size = 1
+retransmit_interval_ms = 200
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1000
+max_retries = 10
+
+[[boot_phases]]
+name = "IPXE"
+pattern = '(?i)\.ipxe$'
+block_size = 1468
+max_window_size = 4
+retransmit_interval_ms = 300
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1500
+max_retries = 5
+
+[[boot_phases]]
+name = "KERNEL"
+pattern = '(?i)(vmlinuz|bzImage|kernel)'
+block_size = 8192
+max_window_size = 32
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+
+[[boot_phases]]
+name = "INITRD"
+pattern = '(?i)(initrd|initramfs)'
+block_size = 8192
+max_window_size = 32
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+
+[[boot_phases]]
+name = "OS_IMAGE"
+pattern = '(?i)\.(img|iso|squashfs)$'
+block_size = 65464
+max_window_size = 64
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 3
+
+[[boot_phases]]
+name = "CONFIG"
+pattern = '(?i)(pxelinux\.cfg/|grub\.cfg|boot\.conf)'
+block_size = 512
+max_window_size = 1
+retransmit_interval_ms = 200
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1000
+max_retries = 10
+
+# DSCP/QoS configuration. Omit the phase map to disable marking.
+# IPv4 sockets use IP_TOS. IPv6 sockets use IPV6_TCLASS, which is applied on
+# Linux only; elsewhere a configured IPv6 mark logs a warning and is skipped.
+[dscp]
+ecn_enabled = false
+
+[dscp.phase_dscp]
+PXE_ROM = 46  # EF
+KERNEL = 34   # AF41
+INITRD = 26   # AF31
+OS_IMAGE = 18 # AF21
+CONFIG = 8    # CS1
+
+# Durable delivery audit log.
+[audit]
+enabled = true
+log_path = "/var/log/tempest/audit.jsonl"
+# Maximum bytes reserved by records awaiting a durable JSONL commit (256 MiB default).
+# queue_max_bytes = 268435456
+# manifest_signing_key_path = "/etc/tempest/manifest-signing.key"
+# manifest_verifying_key = "ed25519:<64 hex characters>"
+# require_signed_manifests = true
+# Optional Tempest-owned rotation. External copytruncate is not recommended.
+# rotate_max_bytes = 1073741824  # 1 GiB; unset disables rotation
+# rotate_keep_segments = 0       # 0 keeps all rotated segments
+
+# Durable control-plane persistence.
+# Stores boot profiles, version groups, active versions, and boot sessions in SQL
+# so service restarts and multi-node deployments recover the same state.
+# Supported URL schemes:
+#   postgres:// or postgresql:// for PostgreSQL
+#   mysql:// for MariaDB, Percona, or MySQL
+[persistence]
+enabled = false
+# Opt-in SQL metadata deletion: exclusive database-enforced single serving node.
+# Select mode before first upgraded startup; ordinary mode has no per-read deletion SQL.
+# Only deletion mode accumulates permanent ownership names (20,000 distinct-name cap).
+# Stop/fence every old server first. Existing mode changes require the explicit
+# offline migration in docs/guides/deletion.md; never reset fences or reader rows.
+# Requires server.max_concurrent_transfers + api.max_connections <= 4096.
+coordinated_deletion = false
+# database_url = "env:TEMPEST_DATABASE_URL"
+# sync_interval_secs = 5
+# Ordinary SQL reads stop when the last validated snapshot reaches this age.
+# Range 1-86400 seconds; must exceed sync_interval_secs in ordinary mode.
+# Zero cannot disable this bound. Existing transfers finish; /ready reports STALE.
+# max_snapshot_age_secs = 300
+# In coordinated deletion mode, keep this below the database connection's idle
+# timeout. Periodic sync probes the lease; ordinary mode holds no lifetime lease.

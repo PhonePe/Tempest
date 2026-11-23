@@ -1,0 +1,268 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+# Job logic lives in Makefile targets.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Format, lint, docs, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run strict Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Build rustdoc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --workspace --no-deps --all-features
+      - name: Test rustdoc examples
+        run: cargo test --locked --workspace --doc --all-features
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+      - name: Validate OpenAPI version and structure
+        run: make openapi-check
+      - name: Validate demo assets
+        run: |
+          python3 -c "from pathlib import Path; [compile(path.read_text(), str(path), 'exec') for path in (Path('demo/l2-flat/demo.py'), Path('demo/l2-flat/client/tftp_client.py'))]"
+          ruby -e "require 'yaml'; YAML.safe_load(File.read('demo/l2-flat/compose.yml'), aliases: true)"
+          ruby -e "require 'json'; JSON.parse(File.read('grafana/tempest-dashboard.json'))"
+
+  msrv:
+    name: Minimum supported Rust versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          key: msrv
+      - run: make msrv
+
+  tests:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux minimal
+            os: ubuntu-latest
+            cargo_args: --no-default-features
+          - name: macOS minimal
+            os: macos-latest
+            cargo_args: --no-default-features
+          - name: Windows minimal
+            os: windows-latest
+            cargo_args: --no-default-features
+          - name: Linux ARM64 minimal
+            os: ubuntu-24.04-arm
+            cargo_args: --no-default-features
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --locked --workspace --lib --tests ${{ matrix.cargo_args }}
+
+  cross-targets:
+    name: ${{ matrix.target }} compile
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          key: ${{ matrix.target }}
+      - run: make cross-check CROSS_TARGETS=${{ matrix.target }}
+
+  persistence:
+    # Every SQL-feature test, once, from one instrumented build: all tests on
+    # PostgreSQL, then the database-backed modules on MySQL. The coverage report
+    # feeds the sonar job.
+    name: SQL persistence backends and coverage
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tempest
+          POSTGRES_PASSWORD: tempest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tempest"
+          --health-interval 5s --health-timeout 5s --health-retries 5
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: tempest
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -proot"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Install coverage instrumentation
+        run: rustup component add llvm-tools-preview
+      - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2
+        with:
+          tool: cargo-llvm-cov@0.9.1
+          fallback: none
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Test PostgreSQL and MySQL with coverage
+        env:
+          TEMPEST_TEST_POSTGRES_URL: postgres://postgres:tempest@localhost:5432/tempest
+          TEMPEST_TEST_MYSQL_URL: mysql://root:root@127.0.0.1:3306/tempest
+        run: make coverage-sql
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: tempest-coverage
+          path: |
+            target/coverage/lcov.info
+            target/coverage/coverage-summary.txt
+          if-no-files-found: error
+
+  sonar:
+    name: SonarQube analysis
+    needs: persistence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Full history lets SonarQube attribute new code and blame correctly.
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tempest-coverage
+          path: target/coverage
+      # Fork pull requests receive no secrets; analysis is then skipped.
+      - name: Check SonarQube token availability
+        id: sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "${SONAR_TOKEN}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::notice::SONAR_TOKEN is unavailable; skipping SonarQube analysis."
+          fi
+      - name: SonarQube analysis
+        if: steps.sonar.outputs.enabled == 'true'
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.organization=phonepe
+            -Dsonar.projectKey=PhonePe_Tempest
+
+  uso-kernel:
+    # Only the kernel-dependent tests ignored by default; the test jobs run the rest.
+    name: Linux UDP segmentation kernel tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: uname -r
+      - run: make test-uso-kernel
+
+  container:
+    name: Container image build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build and smoke-test the production image without publishing
+        run: make container-check CONTAINER_ENGINE=docker
+
+  supply-chain:
+    name: Advisories, licenses, sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: EmbarkStudios/cargo-deny-action@b66acf5e9fe20f8aba065be86778a8a4c846f902 # v2
+        with:
+          command: check
+
+  salt:
+    name: Salt formula rendering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install renderer dependencies
+        run: python3 -m pip install --user jinja2 pyyaml
+      - run: make test-salt
+
+  workflow-policy:
+    name: Workflow action pinning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: zgosalvez/github-actions-ensure-sha-pinned-actions@fc87bb5b5a97953d987372e74478de634726b3e5 # v3
+
+  tempest-contract:
+    name: Live Tempest API contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: make test-live

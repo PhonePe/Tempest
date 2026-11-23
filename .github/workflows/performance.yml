@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Performance Budgets
+
+on:
+  pull_request:
+    paths:
+      - "src/protocol/**"
+      - "benches/**"
+      - "benchmarks/**"
+      - "scripts/check-benchmark-budgets.py"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Makefile"
+      - ".github/workflows/performance.yml"
+  schedule:
+    - cron: "29 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-budgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          # Pull requests restore main's caches but never write their own, so
+          # they cannot evict main's entries from the repository cache quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Run protocol microbenchmarks and enforce budgets
+        run: make bench-check
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: protocol-benchmark-results
+          path: protocol-bench.txt

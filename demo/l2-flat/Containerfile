@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+FROM docker.io/library/debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 tempest \
+    && useradd --system --uid 10001 --gid tempest --home-dir /nonexistent --shell /usr/sbin/nologin tempest \
+    && mkdir -p /etc/tempest /tftpboot /var/log/tempest \
+    && chown -R tempest:tempest /tftpboot /var/log/tempest \
+    && chmod 0700 /var/log/tempest
+
+COPY demo/l2-flat/build/tempest /usr/local/bin/tempest
+
+USER tempest
+EXPOSE 6969/udp 8080/tcp
+ENTRYPOINT ["/usr/local/bin/tempest"]

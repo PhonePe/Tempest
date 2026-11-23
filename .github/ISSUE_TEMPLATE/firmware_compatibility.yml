@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Firmware compatibility report
+description: Submit reproducible PXE, iPXE, BIOS, or UEFI compatibility evidence.
+title: "[Compatibility]: "
+body:
+  - type: markdown
+    attributes:
+      value: Do not submit vulnerabilities or confidential network, inventory, credential, or artifact data here.
+  - type: input
+    id: tempest
+    attributes:
+      label: Tempest version or commit
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client or firmware
+      description: Vendor, model, version, architecture, and BIOS/UEFI/iPXE mode.
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Protocol negotiation
+      description: Requested options, accepted OACK values, transport handoff, and DHCP/Option 67 setup.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and workload
+      description: Server OS/architecture, MTU/network conditions, artifact names/sizes/hashes, and redacted configuration.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result and repetitions
+      description: Report each boot stage, at least three successes, or a minimal repeatable failure.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Shareable evidence
+      description: Bounded logs and a redacted packet capture when safe.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety and scope
+      options:
+        - label: This report contains no credentials, private artifacts, customer data, or confidential topology.
+          required: true
+        - label: This is not a vulnerability report.
+          required: true
+        - label: I have separated core behavior from any private or modified provider behavior.
+          required: true

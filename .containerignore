@@ -1,0 +1,13 @@
+.git
+.cargo
+target
+dist
+demo/l2-flat/tftpboot
+demo/l2-flat/downloads
+demo/l2-flat/audit
+demo/l2-flat/build/.cache
+*.tar.gz
+*.zip
+*.bz2
+*.tmp
+*.log

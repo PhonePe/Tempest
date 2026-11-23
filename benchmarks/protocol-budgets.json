@@ -1,0 +1,7 @@
+{
+    "packet_parse/rrq_options": 5000,
+    "packet_parse/data_8k": 2000,
+    "option_negotiation/five_options": 3000,
+    "window/full_32_block_cycle": 1000,
+    "metrics/default_tftp_start_complete": 3000
+}

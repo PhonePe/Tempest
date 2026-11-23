@@ -1,0 +1,13 @@
+{#- SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd. -#}
+{#- SPDX-License-Identifier: Apache-2.0 -#}
+{% from "tempest/map.jinja" import tempest with context -%}
+{% set datasource = tempest.observability.grafana.datasource -%}
+# Managed by Salt. Do not edit locally.
+apiVersion: 1
+datasources:
+  - name: {{ datasource.name | json }}
+    type: prometheus
+    access: proxy
+    url: {{ datasource.url | json }}
+    isDefault: {{ datasource.is_default | lower }}
+    editable: false

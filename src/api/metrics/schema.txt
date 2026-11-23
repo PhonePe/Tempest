@@ -1,0 +1,61 @@
+tempest_active_boot_sessions gauge Number of active boot sessions by boot profile
+tempest_active_boot_sessions_total gauge Number of active boot sessions
+tempest_active_transfers gauge Number of currently active transfers
+tempest_active_versions gauge Number of active file versions
+tempest_active_versions_by_profile gauge Number of active file versions by boot profile
+tempest_admission_dropped_total counter Requests dropped from the admission queue (TTL or overflow)
+tempest_admission_queued_total counter Requests placed into the admission queue
+tempest_admission_started_total counter Requests dequeued and started from the admission queue
+tempest_audit_admission_rejected_total counter Transfers rejected by fixed audit-admission failure classes
+tempest_audit_jsonl_batches_total counter Successful durable JSONL group commits
+tempest_audit_jsonl_bytes_total counter Bytes included in durable JSONL group commits
+tempest_audit_jsonl_commit_seconds_total counter Time spent serializing, writing, and syncing JSONL batches
+tempest_audit_jsonl_records_total counter Terminal records included in durable JSONL group commits
+tempest_audit_queue_outstanding_records gauge Audit reservations not yet durably synced to JSONL
+tempest_audit_queue_reserved_bytes gauge Bytes reserved by audit records not yet durably synced
+tempest_capacity_rejected_total counter TFTP requests rejected because the server was at max concurrent transfers
+tempest_drain_mode gauge Whether the server is in drain mode
+tempest_duplicate_requests_total counter Retransmitted RRQ or WRQ packets coalesced by client TID
+tempest_extension_failures_total counter Explicit extension errors or provider output rejected by core
+tempest_hot_artifact_cache_bypasses_total counter Artifacts bypassing cache size or capacity bounds
+tempest_hot_artifact_cache_coalesced_total counter Requests joined to an in-progress artifact fill
+tempest_hot_artifact_cache_entries gauge Current hot-artifact cache entries
+tempest_hot_artifact_cache_fills_total counter Completed small-artifact cache fills
+tempest_hot_artifact_cache_freshness_hits_total counter Unmanaged artifact requests served within the configured validation interval
+tempest_hot_artifact_cache_hits_total counter Small-artifact requests served from retained bytes
+tempest_hot_artifact_cache_misses_total counter Small-artifact identities admitted for cache fill
+tempest_hot_artifact_cache_resident_bytes gauge Bytes currently reserved by the hot-artifact cache
+tempest_hot_artifact_cache_verified_hits_total counter Managed artifact requests served from an already digest-verified snapshot
+tempest_listener_shard_requests_total counter Valid TFTP requests accepted by each SO_REUSEPORT listener shard
+tempest_malformed_packets_total counter Malformed TFTP packets observed before log sampling
+tempest_oack_timeouts_total counter Option handshakes abandoned before ACK(0)
+tempest_quarantined_files gauge Number of files currently quarantined by integrity policy
+tempest_rate_limit_rejected_total counter Requests rejected by the per-IP rate limiter
+tempest_release_control_events_total counter Release cutover, rollback, integrity, and signature events
+tempest_release_cutover_duration_seconds histogram Release cutover duration
+tempest_retransmissions_total counter Retransmission events observed on completed transfers
+tempest_runtime_global_queue_depth gauge Tasks currently waiting in Tokio's global queue
+tempest_runtime_worker_busy_seconds_total counter Cumulative busy time for each Tokio runtime worker
+tempest_tftp_udp_segmentation_batches_total counter Process-wide UDP segmentation batches successfully sent
+tempest_tftp_udp_segmentation_fallbacks_total counter Process-wide UDP segmentation syscall rejections falling back to datagrams
+tempest_transfer_bytes_by_profile_total counter Total bytes transferred by boot profile
+tempest_transfer_bytes_by_profile_transport_total counter Total bytes transferred by boot profile and transport
+tempest_transfer_bytes_by_transport_phase_total counter Total bytes transferred by transport and boot phase
+tempest_transfer_bytes_by_transport_total counter Total bytes transferred by transport
+tempest_transfer_bytes_total counter Total bytes transferred by phase
+tempest_transfer_duration_by_profile_seconds histogram Transfer duration distribution by boot profile
+tempest_transfer_duration_seconds histogram Transfer duration distribution by boot phase
+tempest_transfer_failures_by_profile_total counter Total failed transfers by boot profile
+tempest_transfer_failures_by_profile_transport_total counter Total failed transfers by boot profile and transport
+tempest_transfer_failures_by_transport_phase_total counter Total failed transfers by transport and boot phase
+tempest_transfer_failures_by_transport_total counter Total failed transfers by transport
+tempest_transfer_failures_total counter Total failed transfers by phase
+tempest_transfers_by_profile_total counter Total transfers started by boot profile
+tempest_transfers_by_profile_transport_total counter Total transfers started by boot profile and transport
+tempest_transfers_by_transport_phase_total counter Total transfers started by transport and boot phase
+tempest_transfers_by_transport_total counter Total transfers started by transport
+tempest_transfers_total counter Total transfers started by phase
+tempest_unexpected_opcodes_total counter Non-request opcodes received by the TFTP listener
+tempest_uptime_seconds gauge Seconds since the server started
+tempest_version_groups_by_profile gauge Number of registered version groups by boot profile
+tempest_version_groups_total gauge Number of registered version groups

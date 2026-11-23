@@ -1,0 +1,14 @@
+{#- SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd. -#}
+{#- SPDX-License-Identifier: Apache-2.0 -#}
+{% from "tempest/map.jinja" import tempest with context -%}
+{% set prometheus = tempest.observability.prometheus -%}
+# Managed by Salt. Include or merge this scrape config into Prometheus.
+scrape_configs:
+  - job_name: {{ prometheus.job_name | json }}
+    scrape_interval: {{ prometheus.scrape_interval }}
+    metrics_path: {{ prometheus.metrics_path | json }}
+    static_configs:
+      - targets:
+{% for target in prometheus.targets %}
+          - {{ target | json }}
+{% endfor %}

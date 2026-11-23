@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: L2 integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "19 3 * * 3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flat-network:
+    name: Flat-network runtime contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install Podman and Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes podman podman-compose
+      - name: Check L2 prerequisites
+        run: python3 demo/l2-flat/demo.py check
+      - name: Exercise the L2 runtime contract
+        run: python3 demo/l2-flat/demo.py run
+      - name: Tear down L2 resources
+        if: always()
+        run: python3 demo/l2-flat/demo.py down || true

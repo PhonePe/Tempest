@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+# A complete nginx configuration for the HTTPS artifact listener.
+# Replace the listen address, server_name, and upstream for each serving plane.
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log /dev/stderr warn;
+
+events {
+    worker_connections 4096;
+}
+
+http {
+    # Do not record query strings or authorization headers in proxy access logs.
+    log_format artifact '$remote_addr $request_method $uri $status $body_bytes_sent';
+    access_log /dev/stdout artifact;
+    server_tokens off;
+    client_body_temp_path /tmp/client_body;
+    proxy_temp_path /tmp/proxy;
+    fastcgi_temp_path /tmp/fastcgi;
+    uwsgi_temp_path /tmp/uwsgi;
+    scgi_temp_path /tmp/scgi;
+    client_max_body_size 1m;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    keepalive_timeout 30s;
+    send_timeout 300s;
+    gzip off;
+
+    upstream tempest_artifacts {
+        server 127.0.0.1:8080;
+        keepalive 32;
+    }
+
+    server {
+        # Unprivileged host-network port; client URLs must include :8443.
+        listen 8443 ssl;
+        server_name boot.example.net;
+        # Mount the directory, allowing an atomic replacement of current/.
+        ssl_certificate /etc/tempest/tls/current/fullchain.pem;
+        ssl_certificate_key /etc/tempest/tls/current/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_ecdh_curve X25519:prime256v1;
+        ssl_session_cache shared:TempestTLS:10m;
+        ssl_session_timeout 10m;
+        ssl_session_tickets off;
+        ssl_early_data off;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header Authorization $http_authorization;
+        # Core trusts exactly this proxy peer. Discard client-supplied identity.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header Accept-Encoding "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        proxy_redirect off;
+        proxy_next_upstream off;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+
+        location /api/v1/artifacts/ {
+            limit_except GET { deny all; }
+            proxy_pass http://tempest_artifacts;
+        }
+
+        # Control, metrics, health, and native boot remain on the private listener.
+        location / {
+            return 404;
+        }
+    }
+}

@@ -1,0 +1,134 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "tempest-ignition"
+version = "0.1.0"
+authors.workspace = true
+edition = "2024"
+description = "Release-coherent TFTP and HTTP boot artifact server"
+rust-version = "1.85"
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/PhonePe/Tempest"
+keywords = ["tftp", "pxe", "ipxe", "network-boot", "provisioning"]
+categories = ["network-programming", "command-line-utilities"]
+# Distributed as source only; see RELEASE.md.
+publish = false
+
+[workspace]
+members = [".", "crates/tempest-control-client"]
+default-members = ["."]
+# Rust-version-aware dependency resolution (the edition 2024 default), so fresh
+# resolutions stay buildable on the declared minimum supported Rust version.
+resolver = "3"
+
+[workspace.package]
+authors = [
+    "Vikram Kangotra <vikram.kangotra@phonepe.com>",
+    "Krishna Prasanth <krishna.p@phonepe.com>",
+]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+[workspace.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[lib]
+name = "tempest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tempest"
+path = "src/main.rs"
+
+[features]
+default = []
+sql-persistence = ["dep:futures-util", "dep:sqlx"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.53.3", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec", "io"] }
+futures-core = "0.3"
+futures-util = { version = "0.3", optional = true }
+
+# CLI & Config
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Logging & Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+opentelemetry = { version = "0.32", default-features = false, features = ["metrics"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics", "experimental_metrics_custom_reader"] }
+
+# HTTP API
+axum = { version = "0.8", features = ["json"] }
+# Configure Hyper's protocol-aware read deadlines using Axum's existing transport.
+hyper-util = { version = "0.1", features = ["tokio", "server", "service", "http1"] }
+http-body-util = "0.1"
+
+# Durable control-plane persistence (Postgres, MariaDB, Percona/MySQL)
+sqlx = { version = "0.8", optional = true, default-features = false, features = [
+    "runtime-tokio-rustls",
+    "any",
+    "postgres",
+    "mysql",
+] }
+
+# Concurrency
+dashmap = "6"
+arc-swap = "1"
+parking_lot = "0.12"
+
+# Cryptography & Hashing
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+subtle = { version = "2.6", default-features = false }
+hex = "0.4"
+
+# Networking
+socket2 = { version = "0.6", features = ["all"] }
+bytes = "1"
+cap-std = "4.0.3"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Utilities
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+jiff = { version = "1", default-features = false, features = ["std", "serde"] }
+
+[target.'cfg(unix)'.dependencies]
+# Safe RLIMIT_NOFILE preflight; already present transitively through cap-std.
+rustix = { version = "1.1.6", features = ["process"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Safe sendmmsg batching for negotiated TFTP windows.
+rustix = { version = "1.1.6", features = ["net"] }
+nix = { version = "0.30.1", default-features = false, features = ["net", "uio"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+tempfile = "3"
+tokio-test = "0.4"
+tower = "0.5"
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics", "testing", "experimental_metrics_custom_reader"] }
+
+[[bench]]
+name = "protocol_hotpaths"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

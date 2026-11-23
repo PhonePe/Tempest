@@ -1,0 +1,1016 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": "-- Grafana --",
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "description": "Comprehensive telemetry dashboard for Tempest TFTP, bearer HTTP, and native UEFI HTTP Boot delivery",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": null,
+    "links": [],
+    "panels": [
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 100,
+            "title": "Overview",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 200
+                            },
+                            {
+                                "color": "red",
+                                "value": 450
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 0,
+                "y": 1
+            },
+            "id": 1,
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                }
+            },
+            "title": "Active Transfers",
+            "type": "stat",
+            "targets": [
+                {
+                    "expr": "tempest_active_transfers",
+                    "legendFormat": "active"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 4,
+                "y": 1
+            },
+            "id": 2,
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                }
+            },
+            "title": "Uptime",
+            "type": "stat",
+            "targets": [
+                {
+                    "expr": "tempest_uptime_seconds",
+                    "legendFormat": "uptime"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 1
+                            }
+                        ]
+                    },
+                    "mappings": [
+                        {
+                            "options": {
+                                "0": {
+                                    "text": "SERVING"
+                                }
+                            },
+                            "type": "value"
+                        },
+                        {
+                            "options": {
+                                "1": {
+                                    "text": "DRAINING"
+                                }
+                            },
+                            "type": "value"
+                        }
+                    ]
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 8,
+                "y": 1
+            },
+            "id": 3,
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                }
+            },
+            "title": "Drain Mode",
+            "type": "stat",
+            "targets": [
+                {
+                    "expr": "tempest_drain_mode",
+                    "legendFormat": "drain"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "orange",
+                                "value": 1
+                            },
+                            {
+                                "color": "red",
+                                "value": 5
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 12,
+                "y": 1
+            },
+            "id": 4,
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                }
+            },
+            "title": "Quarantined Files",
+            "type": "stat",
+            "targets": [
+                {
+                    "expr": "tempest_quarantined_files",
+                    "legendFormat": "quarantined"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "blue",
+                                "value": null
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 16,
+                "y": 1
+            },
+            "id": 5,
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                }
+            },
+            "title": "Version Groups",
+            "type": "stat",
+            "targets": [
+                {
+                    "expr": "tempest_version_groups_total",
+                    "legendFormat": "groups"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "blue",
+                                "value": null
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 4,
+                "x": 20,
+                "y": 1
+            },
+            "id": 6,
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                }
+            },
+            "title": "Active Versions",
+            "type": "stat",
+            "targets": [
+                {
+                    "expr": "tempest_active_versions",
+                    "legendFormat": "versions"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 5
+            },
+            "id": 101,
+            "title": "Transfer Throughput",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 6
+            },
+            "id": 10,
+            "options": {
+                "legend": {
+                    "displayMode": "table",
+                    "placement": "bottom"
+                }
+            },
+            "title": "Transfer Rate by Phase",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_transfers_total[5m])",
+                    "legendFormat": "{{phase}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "Bps"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 6
+            },
+            "id": 11,
+            "options": {
+                "legend": {
+                    "displayMode": "table",
+                    "placement": "bottom"
+                }
+            },
+            "title": "Bytes Throughput by Phase",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_transfer_bytes_total[5m])",
+                    "legendFormat": "{{phase}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 14
+            },
+            "id": 12,
+            "options": {
+                "legend": {
+                    "displayMode": "table",
+                    "placement": "bottom"
+                }
+            },
+            "title": "Transfer Failure Rate by Phase",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_transfer_failures_total[5m])",
+                    "legendFormat": "{{phase}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 14
+            },
+            "id": 13,
+            "title": "Failure Ratio by Phase",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_transfer_failures_total[5m]) / (rate(tempest_transfers_total[5m]) + 0.001) * 100",
+                    "legendFormat": "{{phase}}"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 22
+            },
+            "id": 102,
+            "title": "Transfer Duration (Histogram)",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 23
+            },
+            "id": 20,
+            "title": "p50 Transfer Duration by Phase",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.5, rate(tempest_transfer_duration_seconds_bucket[5m]))",
+                    "legendFormat": "p50 {{phase}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 23
+            },
+            "id": 21,
+            "title": "p95 / p99 Transfer Duration",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, rate(tempest_transfer_duration_seconds_bucket[5m]))",
+                    "legendFormat": "p95 {{phase}}"
+                },
+                {
+                    "expr": "histogram_quantile(0.99, rate(tempest_transfer_duration_seconds_bucket[5m]))",
+                    "legendFormat": "p99 {{phase}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 31
+            },
+            "id": 22,
+            "title": "Average Transfer Duration by Phase",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_transfer_duration_seconds_sum[5m]) / rate(tempest_transfer_duration_seconds_count[5m])",
+                    "legendFormat": "avg {{phase}}"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 39
+            },
+            "id": 103,
+            "title": "Rate Limiting & Admission",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 40
+            },
+            "id": 30,
+            "title": "Rate Limit Rejections",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_rate_limit_rejected_total[5m])",
+                    "legendFormat": "{{layer}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 40
+            },
+            "id": 31,
+            "title": "Capacity Rejections",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_capacity_rejected_total[5m])",
+                    "legendFormat": "capacity rejected"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 48
+            },
+            "id": 32,
+            "title": "Admission Queue: Queued",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_admission_queued_total[5m])",
+                    "legendFormat": "queued/s"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 48
+            },
+            "id": 33,
+            "title": "Admission Queue: Started",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_admission_started_total[5m])",
+                    "legendFormat": "started/s"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 48
+            },
+            "id": 34,
+            "title": "Admission Queue: Dropped",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_admission_dropped_total[5m])",
+                    "legendFormat": "dropped/s"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 56
+            },
+            "id": 104,
+            "title": "Network & Protocol",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 57
+            },
+            "id": 40,
+            "title": "Retransmissions Rate",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_retransmissions_total[5m])",
+                    "legendFormat": "retransmissions/s"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {}
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 57
+            },
+            "id": 41,
+            "title": "Transfers by Transport",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "sum by (transport) (rate(tempest_transfers_by_transport_total[5m]))",
+                    "legendFormat": "{{transport}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {}
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 65
+            },
+            "id": 42,
+            "title": "Active Boot Sessions by Profile",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "tempest_active_boot_sessions",
+                    "legendFormat": "{{boot_profile}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 65
+            },
+            "id": 43,
+            "title": "Retransmission Ratio vs Transfers",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "rate(tempest_retransmissions_total[5m]) / (sum(rate(tempest_transfers_total[5m])) + 0.001) * 100",
+                    "legendFormat": "retx ratio %"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 73
+            },
+            "id": 106,
+            "title": "HTTP Artifact Delivery",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 74
+            },
+            "id": 60,
+            "title": "HTTP Transfer Rate by Authorization Mode",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "sum by (transport) (rate(tempest_transfers_by_transport_total{transport=~\"HTTP|HTTP_NATIVE\"}[5m]))",
+                    "legendFormat": "{{transport}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "Bps"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 74
+            },
+            "id": 61,
+            "title": "HTTP Byte Throughput by Authorization Mode",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "sum by (transport) (rate(tempest_transfer_bytes_by_transport_total{transport=~\"HTTP|HTTP_NATIVE\"}[5m]))",
+                    "legendFormat": "{{transport}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 82
+            },
+            "id": 62,
+            "title": "Native HTTP Boot Transfer Rate by Profile",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "sum by (boot_profile) (rate(tempest_transfers_by_profile_transport_total{transport=\"HTTP_NATIVE\"}[5m]))",
+                    "legendFormat": "{{boot_profile}}"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 82
+            },
+            "id": 63,
+            "title": "Native HTTP Boot Failure Ratio",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "100 * (sum(rate(tempest_transfer_failures_by_transport_total{transport=\"HTTP_NATIVE\"}[5m])) or vector(0)) / clamp_min((sum(rate(tempest_transfers_by_transport_total{transport=\"HTTP_NATIVE\"}[5m])) or vector(0)), 0.001)",
+                    "legendFormat": "native failure %"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 90
+            },
+            "id": 105,
+            "title": "Version & Integrity",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {}
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 91
+            },
+            "id": 50,
+            "title": "Version Groups Over Time",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "tempest_version_groups_total",
+                    "legendFormat": "groups"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {}
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 91
+            },
+            "id": 51,
+            "title": "Active Versions Over Time",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "tempest_active_versions",
+                    "legendFormat": "active versions"
+                }
+            ]
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 1
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 91
+            },
+            "id": 52,
+            "title": "Quarantined Files Over Time",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "tempest_quarantined_files",
+                    "legendFormat": "quarantined"
+                }
+            ]
+        },
+        {
+            "collapsed": false,
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 99
+            },
+            "id": 107,
+            "title": "Extensions",
+            "type": "row"
+        },
+        {
+            "datasource": "${datasource}",
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 100
+            },
+            "id": 70,
+            "title": "Extension Failure Rate",
+            "type": "timeseries",
+            "targets": [
+                {
+                    "expr": "sum by (contract, operation) (rate(tempest_extension_failures_total[5m]))",
+                    "legendFormat": "{{contract}} / {{operation}}"
+                }
+            ]
+        }
+    ],
+    "schemaVersion": 39,
+    "tags": [
+        "tempest",
+        "tftp",
+        "http",
+        "uefi",
+        "pxe",
+        "boot"
+    ],
+    "templating": {
+        "list": [
+            {
+                "current": {
+                    "selected": false,
+                    "text": "Prometheus",
+                    "value": "Prometheus"
+                },
+                "hide": 0,
+                "includeAll": false,
+                "label": "Datasource",
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "prometheus",
+                "refresh": 1,
+                "type": "datasource"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "Tempest Boot Artifact Server",
+    "uid": "tempest-tftp-overview",
+    "version": 3
+}

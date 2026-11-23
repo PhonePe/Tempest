@@ -1,0 +1,59 @@
+{#- SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd. -#}
+{#- SPDX-License-Identifier: Apache-2.0 -#}
+{% from "tempest/map.jinja" import tempest with context -%}
+{% set install = tempest.install -%}
+{% set paths = tempest.paths -%}
+{% set service = tempest.service -%}
+[Unit]
+Description=Tempest TFTP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ tempest.user }}
+Group={{ tempest.group }}
+ExecStart={{ install.binary_path }} --config {{ paths.config_file }}
+Restart=on-failure
+RestartSec={{ service.restart_sec }}
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec={{ service.timeout_stop_sec }}
+EnvironmentFile=-{{ paths.env_file }}
+LimitNOFILE={{ service.limit_nofile }}
+{% if service.ambient_capabilities %}
+AmbientCapabilities={{ service.ambient_capabilities | join(' ') }}
+CapabilityBoundingSet={{ service.ambient_capabilities | join(' ') }}
+{% endif -%}
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+{% if service.read_only_paths %}
+ReadOnlyPaths={{ service.read_only_paths | join(' ') }}
+{% endif -%}
+{% if service.read_write_paths %}
+ReadWritePaths={{ service.read_write_paths | join(' ') }}
+{% endif -%}
+PrivateTmp=true
+# Kernel, device and namespace isolation; Tempest needs none of these.
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# IPv4/IPv6 for TFTP, HTTP and SQL; AF_UNIX for local database sockets;
+# AF_NETLINK for libc address lookups.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

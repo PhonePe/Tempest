@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+[server]
+# Replace with this node's directly connected provisioning address. Never use
+# 0.0.0.0 in the dual-plane profile: transfer sockets must retain this source.
+bind = "192.0.2.11"
+port = 69
+listener_shards = 1
+root = "/tftpboot"
+unmanaged_cache_validation_interval_ms = 0
+hot_artifact_cache_max_bytes = 67108864
+hot_artifact_cache_max_file_bytes = 2097152
+max_concurrent_transfers = 500
+tftp_requests_per_ip_per_second = 50
+http_requests_per_ip_per_second = 100
+max_boot_sessions = 100000
+default_block_size = 512
+max_window_size = 64
+accept_client_timeout = true
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+listener_receive_buffer_bytes = 4194304
+transfer_socket_buffer_bytes = 0
+log_level = "info"
+json_logging = true
+write_enabled = false
+
+[api]
+# Use the same explicit plane address when L2 clients need HTTP artifacts.
+# Bind to loopback instead if this instance is TFTP-only.
+bind = "192.0.2.11"
+port = 8080
+enable_metrics = true
+metrics_require_api_key = true
+enable_versions_api = true
+enable_audit_api = true
+enable_native_http_boot = false
+native_http_boot_filename = "boot.efi"
+artifact_cache_max_bytes = 67108864
+artifact_cache_max_file_bytes = 16777216
+api_key = "env:TEMPEST_API_KEY"
+
+[[boot_phases]]
+name = "PXE_ROM"
+pattern = '(?i)(pxelinux\.0|undionly\.kpxe|ipxe\.\w+)$'
+block_size = 512
+max_window_size = 1
+retransmit_interval_ms = 200
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1000
+max_retries = 10
+
+[[boot_phases]]
+name = "IPXE"
+pattern = '(?i)\.ipxe$'
+block_size = 1468
+max_window_size = 4
+retransmit_interval_ms = 300
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1500
+max_retries = 5
+
+[[boot_phases]]
+name = "KERNEL"
+pattern = '(?i)(vmlinuz|bzImage|kernel)'
+block_size = 8192
+max_window_size = 32
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+
+[[boot_phases]]
+name = "INITRD"
+pattern = '(?i)(initrd|initramfs)'
+block_size = 8192
+max_window_size = 32
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 5
+
+[[boot_phases]]
+name = "OS_IMAGE"
+pattern = '(?i)\.(img|iso|squashfs)$'
+block_size = 65464
+max_window_size = 64
+retransmit_interval_ms = 1000
+min_retransmit_interval_ms = 250
+max_retransmit_interval_ms = 4000
+max_retries = 3
+
+[[boot_phases]]
+name = "CONFIG"
+pattern = '(?i)(pxelinux\.cfg/|grub\.cfg|boot\.conf)'
+block_size = 512
+max_window_size = 1
+retransmit_interval_ms = 200
+min_retransmit_interval_ms = 100
+max_retransmit_interval_ms = 1000
+max_retries = 10
+
+[audit]
+enabled = true
+log_path = "/var/log/tempest/audit.jsonl"
+rotate_max_bytes = 1073741824
+rotate_keep_segments = 0
+
+[persistence]
+enabled = true
+database_url = "env:TEMPEST_DATABASE_URL"
+sync_interval_secs = 2

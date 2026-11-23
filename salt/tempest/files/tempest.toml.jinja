@@ -1,0 +1,93 @@
+{#- SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd. -#}
+{#- SPDX-License-Identifier: Apache-2.0 -#}
+{% from "tempest/map.jinja" import tempest with context -%}
+{% set server = tempest.server -%}
+{% set api = tempest.api -%}
+{% set dscp = tempest.dscp -%}
+{% set audit = tempest.audit -%}
+{% set persistence = tempest.persistence -%}
+# Managed by Salt. Do not edit locally.
+
+[server]
+bind = {{ server.bind | json }}
+port = {{ server.port }}
+listener_shards = {{ server.listener_shards }}
+root = {{ server.root | json }}
+unmanaged_cache_validation_interval_ms = {{ server.unmanaged_cache_validation_interval_ms }}
+hot_artifact_cache_max_bytes = {{ server.hot_artifact_cache_max_bytes }}
+hot_artifact_cache_max_file_bytes = {{ server.hot_artifact_cache_max_file_bytes }}
+max_concurrent_transfers = {{ server.max_concurrent_transfers }}
+tftp_requests_per_ip_per_second = {{ server.tftp_requests_per_ip_per_second }}
+http_requests_per_ip_per_second = {{ server.http_requests_per_ip_per_second }}
+default_block_size = {{ server.default_block_size }}
+max_window_size = {{ server.max_window_size }}
+accept_client_timeout = {{ server.accept_client_timeout | lower }}
+retransmit_interval_ms = {{ server.retransmit_interval_ms }}
+min_retransmit_interval_ms = {{ server.min_retransmit_interval_ms }}
+max_retransmit_interval_ms = {{ server.max_retransmit_interval_ms }}
+max_retries = {{ server.max_retries }}
+listener_receive_buffer_bytes = {{ server.listener_receive_buffer_bytes }}
+transfer_socket_buffer_bytes = {{ server.transfer_socket_buffer_bytes }}
+log_level = {{ server.log_level | json }}
+json_logging = {{ server.json_logging | lower }}
+write_enabled = {{ server.write_enabled | lower }}
+max_write_file_size = {{ server.max_write_file_size }}
+bandwidth_governor_enabled = {{ server.bandwidth_governor_enabled | lower }}
+{% if server.total_bandwidth_bytes_per_second is not none %}total_bandwidth_bytes_per_second = {{ server.total_bandwidth_bytes_per_second }}
+{% endif -%}
+
+[api]
+bind = {{ api.bind | json }}
+port = {{ api.port }}
+enable_metrics = {{ api.enable_metrics | lower }}
+metrics_require_api_key = {{ api.metrics_require_api_key | lower }}
+enable_versions_api = {{ api.enable_versions_api | lower }}
+enable_audit_api = {{ api.enable_audit_api | lower }}
+enable_native_http_boot = {{ api.enable_native_http_boot | lower }}
+native_http_boot_filename = {{ api.native_http_boot_filename | json }}
+trusted_proxy_ips = {{ api.trusted_proxy_ips | json }}
+max_request_body_bytes = {{ api.max_request_body_bytes }}
+artifact_cache_max_bytes = {{ api.artifact_cache_max_bytes }}
+artifact_cache_max_file_bytes = {{ api.artifact_cache_max_file_bytes }}
+{% if api.api_key %}api_key = {{ api.api_key | json }}
+{% endif %}
+
+{% for phase in tempest.boot_phases %}
+[[boot_phases]]
+name = {{ phase.name | json }}
+pattern = {{ phase.pattern | json }}
+block_size = {{ phase.block_size }}
+max_window_size = {{ phase.max_window_size }}
+retransmit_interval_ms = {{ phase.retransmit_interval_ms }}
+min_retransmit_interval_ms = {{ phase.min_retransmit_interval_ms }}
+max_retransmit_interval_ms = {{ phase.max_retransmit_interval_ms }}
+max_retries = {{ phase.max_retries }}
+
+{% endfor -%}
+[dscp]
+ecn_enabled = {{ dscp.ecn_enabled | lower }}
+
+[dscp.phase_dscp]
+{% for phase, value in dscp.phase_dscp.items() -%}
+{{ phase }} = {{ value }}
+{% endfor %}
+
+[audit]
+enabled = {{ audit.enabled | lower }}
+queue_max_bytes = {{ audit.queue_max_bytes }}
+{% if audit.rotate_max_bytes is not none %}rotate_max_bytes = {{ audit.rotate_max_bytes }}
+{% endif -%}
+rotate_keep_segments = {{ audit.rotate_keep_segments }}
+{% if audit.log_path %}log_path = {{ audit.log_path | json }}
+{% endif -%}
+{% if audit.manifest_signing_key_path %}manifest_signing_key_path = {{ audit.manifest_signing_key_path | json }}
+{% endif -%}
+{% if audit.manifest_verifying_key %}manifest_verifying_key = {{ audit.manifest_verifying_key | json }}
+{% endif -%}
+require_signed_manifests = {{ audit.require_signed_manifests | lower }}
+
+[persistence]
+enabled = {{ persistence.enabled | lower }}
+{% if persistence.database_url %}database_url = {{ persistence.database_url | json }}
+{% endif -%}
+sync_interval_secs = {{ persistence.sync_interval_secs }}

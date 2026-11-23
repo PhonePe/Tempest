@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Semver Compatibility
+
+# Catch breaking public API changes on pull requests, before they merge, by
+# comparing against each package's previous release tag. Release tags re-check.
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "ci/check-semver.sh"
+      - ".github/workflows/semver.yml"
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "tempest-control-client-v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-api:
+    strategy:
+      matrix:
+        include:
+          - package: tempest-ignition
+            tag_pattern: 'v[0-9]*'
+          - package: tempest-control-client
+            tag_pattern: 'tempest-control-client-v[0-9]*'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@6a1bd70eaac3c8bdf093356838d7ee09fda951cf # v2
+        with:
+          tool: cargo-semver-checks@0.51.0
+          fallback: none
+      - name: Compare with previous public release
+        shell: bash
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TAG_PATTERN: ${{ matrix.tag_pattern }}
+          CURRENT_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: ci/check-semver.sh "${PACKAGE}" "${TAG_PATTERN}" "${CURRENT_TAG}"

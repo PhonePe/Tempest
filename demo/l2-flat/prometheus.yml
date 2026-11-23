@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: tempest
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - tempest:8080

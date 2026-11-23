@@ -1,0 +1,33 @@
+! SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+! SPDX-License-Identifier: Apache-2.0
+
+frr defaults traditional
+hostname tempest-odd
+log syslog informational
+service integrated-vtysh-config
+!
+interface lo
+ ip address 198.51.100.69/32
+!
+ip prefix-list TEMPEST-SERVICE seq 10 permit 198.51.100.69/32
+!
+route-map TEMPEST-OUT permit 10
+ match ip address prefix-list TEMPEST-SERVICE
+ set metric 10
+!
+route-map TEMPEST-OUT deny 100
+!
+router bgp 64512
+ bgp router-id 192.0.2.11
+ neighbor 192.0.2.1 remote-as 64500
+ neighbor 192.0.2.1 description provisioning-fabric
+ ! Add transport authentication here when supported by both peers. Source its
+ ! secret from protected Salt pillar; do not commit it to this file.
+ ! neighbor 192.0.2.1 password <secret>
+ !
+ address-family ipv4 unicast
+  network 198.51.100.69/32
+  neighbor 192.0.2.1 activate
+  neighbor 192.0.2.1 route-map TEMPEST-OUT out
+ exit-address-family
+!

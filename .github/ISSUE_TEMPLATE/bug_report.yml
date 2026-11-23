@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug report
+description: Report a reproducible Tempest defect without sensitive data.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: Security vulnerabilities must be reported privately according to SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Tempest version or commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Rust version, database backend, and client implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Include bounded logs or packet details with secrets and private addresses removed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include relevant configuration with credentials and internal data redacted.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This report contains no credentials, private keys, customer data, or confidential topology.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

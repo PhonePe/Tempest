@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+# SQLx's MySQL authentication client uses rsa for public-key password
+# encryption. Tempest never loads or performs operations with an RSA private
+# key, so the private-key timing attack in this advisory is unreachable here.
+# Remove this exception when SQLx no longer resolves rsa 0.9.
+ignore = ["RUSTSEC-2023-0071"]
+
+[licenses]
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+# Existing cap-std Windows adapter, now covered by the workspace-wide audit.
+[[licenses.exceptions]]
+name = "winx"
+version = "=0.36.4"
+allow = ["Apache-2.0 WITH LLVM-exception"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

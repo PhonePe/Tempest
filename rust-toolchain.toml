@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+# Build, test and release with one reviewed compiler. Keep this in sync with the
+# rust:<version> image digests in Dockerfile and with
+# RC_RUST_VERSION and RC_BUILDER_IMAGE in the Makefile; upgrade them together in
+# one change. The declared minimum (rust-version) is
+# checked separately by `make msrv`.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]

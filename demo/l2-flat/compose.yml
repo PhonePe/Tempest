@@ -1,0 +1,140 @@
+# SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    platform: ${TEMPEST_DEMO_PLATFORM}
+    container_name: tempest-postgres
+    hostname: postgres
+    environment:
+      POSTGRES_DB: tempest
+      POSTGRES_USER: tempest
+      POSTGRES_PASSWORD: tempest-demo-password
+    volumes:
+      - tempest-db-data:/var/lib/postgresql/data:rw
+    networks:
+      tempest-l2:
+        ipv4_address: 10.89.60.20
+        ipv6_address: fd89:60::20
+        aliases:
+          - postgres.demo.lab.internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tempest -d tempest"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  tempest:
+    image: localhost/tempest-l2-demo:${TEMPEST_DEMO_IMAGE_TAG:-latest}
+    platform: ${TEMPEST_DEMO_PLATFORM}
+    build:
+      context: ../..
+      dockerfile: demo/l2-flat/Containerfile
+    container_name: tempest-demo
+    hostname: tempest
+    command: ["--config", "/etc/tempest/tempest-demo.toml"]
+    environment:
+      TEMPEST_DATABASE_URL: postgres://tempest:tempest-demo-password@postgres:5432/tempest
+    volumes:
+      - ${TEMPEST_DEMO_CONFIG:-./tempest-demo.toml}:/etc/tempest/tempest-demo.toml:ro
+      - ./tftpboot:/tftpboot:rw
+      - tempest-audit-data:/var/log/tempest:U
+    ports:
+      - "127.0.0.1:${TEMPEST_DEMO_API_PORT:-18080}:8080/tcp"
+      - "127.0.0.1:${TEMPEST_DEMO_TFTP_PORT:-16969}:6969/udp"
+    networks:
+      tempest-l2:
+        ipv4_address: 10.89.60.10
+        ipv6_address: fd89:60::10
+        aliases:
+          - tempest.demo.lab.internal
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  tempest-ipv6:
+    image: localhost/tempest-l2-demo:${TEMPEST_DEMO_IMAGE_TAG:-latest}
+    platform: ${TEMPEST_DEMO_PLATFORM}
+    container_name: tempest-demo-ipv6
+    hostname: tempest-ipv6
+    command: ["--config", "/etc/tempest/tempest-demo-ipv6.toml"]
+    environment:
+      TEMPEST_DATABASE_URL: postgres://tempest:tempest-demo-password@postgres:5432/tempest
+    volumes:
+      - ${TEMPEST_DEMO_IPV6_CONFIG:-./tempest-demo-ipv6.toml}:/etc/tempest/tempest-demo-ipv6.toml:ro
+      - ./tftpboot:/tftpboot:ro
+      - tempest-ipv6-audit-data:/var/log/tempest:U
+    networks:
+      tempest-l2:
+        ipv4_address: 10.89.60.11
+        ipv6_address: fd89:60::11
+        aliases:
+          - tempest-ipv6.demo.lab.internal
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  client:
+    image: docker.io/library/python:3.12-alpine
+    platform: ${TEMPEST_DEMO_PLATFORM}
+    working_dir: /client
+    volumes:
+      - ./client:/client:ro
+      - ./downloads:/downloads:rw
+    networks:
+      tempest-l2:
+        ipv4_address: 10.89.60.42
+        ipv6_address: fd89:60::42
+    entrypoint: ["python", "/client/tftp_client.py"]
+
+  prometheus:
+    image: docker.io/prom/prometheus:v2.55.1
+    platform: ${TEMPEST_DEMO_PLATFORM}
+    container_name: tempest-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090/tcp"
+    networks:
+      tempest-l2:
+    depends_on:
+      - tempest
+
+  grafana:
+    image: docker.io/grafana/grafana-oss:11.4.0
+    platform: ${TEMPEST_DEMO_PLATFORM}
+    container_name: tempest-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: tempest
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../grafana/tempest-dashboard.json:/var/lib/grafana/dashboards/tempest-dashboard.json:ro
+    ports:
+      - "127.0.0.1:${TEMPEST_DEMO_GRAFANA_PORT:-3000}:3000/tcp"
+    networks:
+      tempest-l2:
+    depends_on:
+      - prometheus
+
+networks:
+  tempest-l2:
+    name: tempest-l2-demo
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 10.89.60.0/24
+        - subnet: fd89:60::/64
+
+volumes:
+  tempest-db-data:
+  tempest-audit-data:
+  tempest-ipv6-audit-data:
