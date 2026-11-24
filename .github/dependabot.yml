@@ -1,15 +1,69 @@
 # SPDX-FileCopyrightText: 2026 PhonePe India Pvt. Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
+# Container images are deliberately not managed here: the Dockerfile pins its
+# base images by digest alongside the repository Rust toolchain, deployment
+# images are operator-supplied, and demo images are validated by hand.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    # CI builds with --locked, so only propose lockfile updates within the
+    # Cargo.toml requirements. Cargo supports only auto and lockfile-only, and
+    # auto proposed out-of-range lockfiles that CI rejects. Upgrades that need
+    # a manifest change (new major or 0.x minor) are made by hand.
+    versioning-strategy: lockfile-only
+    # Skip brand-new releases for a week; security updates are not delayed.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      # Every lockfile-only update is semver-compatible, so one weekly PR
+      # keeps related crates (such as the OpenTelemetry API and SDK) together.
+      cargo:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
+
+  # The fuzz harness is a separate workspace with its own lockfile.
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: monthly
+      time: "06:00"
+      timezone: Asia/Kolkata
+    versioning-strategy: lockfile-only
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      fuzz:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 2
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+      time: "06:00"
+      timezone: Asia/Kolkata
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
