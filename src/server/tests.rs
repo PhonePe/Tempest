@@ -1097,6 +1097,7 @@ async fn duplicate_rrq_uses_one_transfer_tid() {
     config.server.bind = IpAddr::V4(Ipv4Addr::LOCALHOST);
     config.server.port = 0;
     config.server.root = root.path().to_path_buf();
+    hold_retransmissions(&mut config);
     let server = Arc::new(TftpServer::new(config));
     let state = server.state();
     state
@@ -1229,6 +1230,17 @@ fn tftp_client_limit_config(root: &Path) -> TempestConfig {
     config
 }
 
+/// Pins the server retransmission timer far beyond any CI scheduling delay.
+///
+/// Wire tests read the next datagram and assert its type or that nothing was
+/// retransmitted. With the 1s default, a client delayed by a loaded runner
+/// receives a correct retransmission where it expects the next packet.
+fn hold_retransmissions(config: &mut TempestConfig) {
+    config.server.retransmit_interval_ms = 30_000;
+    config.server.min_retransmit_interval_ms = 30_000;
+    config.server.max_retransmit_interval_ms = 30_000;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sequential_rrqs_on_one_client_tid_do_not_wait_for_retransmission() {
     let root = tempfile::tempdir().unwrap();
@@ -1240,6 +1252,7 @@ async fn sequential_rrqs_on_one_client_tid_do_not_wait_for_retransmission() {
     // the client's next RRQ on a loaded host, so allow every iteration's permit.
     config.server.max_tftp_transfers_per_ip = 128;
     config.audit.enabled = false;
+    hold_retransmissions(&mut config);
     let server = TftpServer::new(config);
     let state = server.state();
     state
@@ -1301,6 +1314,7 @@ async fn negotiated_rrq_handoff_preserves_handshake_and_source_quota() {
     std::fs::write(&artifact, b"artifact").unwrap();
     let mut config = tftp_client_limit_config(root.path());
     config.audit.enabled = false;
+    hold_retransmissions(&mut config);
     let server = TftpServer::new(config);
     let state = server.state();
     state
@@ -1372,6 +1386,7 @@ async fn tftp_client_policy_wire_exchange(is_write: bool, timeout: u8, accept: b
     config.server.max_window_size = 2;
     config.boot_phases.clear();
     config.audit.enabled = false;
+    hold_retransmissions(&mut config);
     let server = TftpServer::new(config);
     let state = server.state();
     let group = state
@@ -2809,6 +2824,13 @@ async fn metrics_text_maintenance_refreshes_on_blocking_pool_and_releases_on_can
     assert!(task.await.unwrap_err().is_cancelled());
     drop(state);
     drop(server);
-    assert!(weak_state.upgrade().is_none());
-    assert!(cache.upgrade().is_none());
+    // Aborting cannot interrupt a refresh already running on the blocking
+    // pool; it releases its upgraded state when the render returns.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while weak_state.upgrade().is_some() || cache.upgrade().is_some() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancelled maintenance must release server state");
 }

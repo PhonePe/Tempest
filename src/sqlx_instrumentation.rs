@@ -550,6 +550,23 @@ mod tests {
             format!("SELECT pg_terminate_backend({id})")
         };
         sqlx::query(&kill).execute(&pool).await.unwrap();
+        // Both kills return before the victim exits; COMMIT must not race it.
+        let alive = if url.starts_with("mysql:") {
+            format!("SELECT COUNT(*) FROM information_schema.processlist WHERE id = {id}")
+        } else {
+            format!("SELECT COUNT(*) FROM pg_stat_activity WHERE pid = {id}")
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            loop {
+                let remaining: i64 = sqlx::query_scalar(&alive).fetch_one(&pool).await.unwrap();
+                if remaining == 0 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("killed backend did not exit within 30 seconds");
         capture.0.lock().unwrap().clear();
         assert!(tx.commit().await.is_err());
         assert_eq!(

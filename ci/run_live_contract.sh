@@ -40,8 +40,6 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-api_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-
 mkdir -p "${run_dir}/tftpboot"
 printf 'tempest live contract v1\n' >"${run_dir}/tftpboot/contract-v1.bin"
 printf 'tempest live contract v2\n' >"${run_dir}/tftpboot/contract-v2.bin"
@@ -54,7 +52,9 @@ max_boot_sessions = 1
 
 [api]
 bind = "127.0.0.1"
-port = ${api_port}
+# The server binds an ephemeral port itself and logs it; probing for a free
+# port here would race any other process for it before the server binds.
+port = 0
 enable_metrics = true
 enable_versions_api = true
 enable_audit_api = false
@@ -64,8 +64,14 @@ EOF
 "${CARGO_TARGET_DIR}/debug/tempest" --config "${run_dir}/tempest.toml" >"${run_dir}/tempest.log" 2>&1 &
 server_pid=$!
 
+api_url=""
 for _ in {1..90}; do
-  if curl --fail --silent "http://127.0.0.1:${api_port}/ready" >/dev/null; then
+  if [[ -z "${api_url}" ]]; then
+    api_addr="$(grep 'HTTP server listening' "${run_dir}/tempest.log" \
+      | grep -oE '127\.0\.0\.1:[0-9]+' | head -n 1 || true)"
+    [[ -n "${api_addr}" ]] && api_url="http://${api_addr}"
+  fi
+  if [[ -n "${api_url}" ]] && curl --fail --silent "${api_url}/ready" >/dev/null; then
     break
   fi
   if ! kill -0 "${server_pid}" 2>/dev/null; then
@@ -74,9 +80,13 @@ for _ in {1..90}; do
   fi
   sleep 1
 done
-curl --fail --silent --show-error "http://127.0.0.1:${api_port}/ready" >/dev/null
+if [[ -z "${api_url}" ]]; then
+  echo "Tempest did not report its HTTP listener address" >&2
+  exit 1
+fi
+curl --fail --silent --show-error "${api_url}/ready" >/dev/null
 
-TEMPEST_TEST_BASE_URL="http://127.0.0.1:${api_port}" \
+TEMPEST_TEST_BASE_URL="${api_url}" \
 TEMPEST_TEST_API_KEY=contract-test-key-2026 \
 TEMPEST_TEST_ARTIFACT_PATH="${run_dir}/tftpboot/contract-v1.bin" \
 TEMPEST_TEST_REPLACEMENT_PATH="${run_dir}/tftpboot/contract-v2.bin" \
