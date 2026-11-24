@@ -525,7 +525,15 @@ async fn recv_from_transfer_peer(
     unknown_tid_responder: &mut UnknownTidResponder,
 ) -> Result<usize, std::io::Error> {
     loop {
-        let (len, peer) = socket.recv_from(buf).await?;
+        let (len, peer) = match socket.recv_from(buf).await {
+            Ok(received) => received,
+            // Windows reports an ICMP port-unreachable for an earlier send on
+            // this unconnected socket (e.g. an unknown-TID ERROR to a closed
+            // port) as a reset on the next receive. It carries no datagram for
+            // this transfer; retries and the transfer deadline still bound it.
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => continue,
+            Err(error) => return Err(error),
+        };
         if peer == client_addr {
             return Ok(len);
         }

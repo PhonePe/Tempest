@@ -1546,6 +1546,45 @@ async fn unknown_tid_responses_stop_at_the_exchange_budget() {
     );
 }
 
+#[tokio::test]
+async fn closed_unknown_tid_peer_does_not_abort_the_transfer_receive() {
+    let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let good_client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let server_addr = server.local_addr().unwrap();
+    let good_addr = good_client.local_addr().unwrap();
+    {
+        let stray = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        stray
+            .send_to(&TftpPacket::ack(1), server_addr)
+            .await
+            .unwrap();
+    }
+    good_client
+        .send_to(&TftpPacket::ack(0), server_addr)
+        .await
+        .unwrap();
+
+    // The unknown-TID ERROR goes to the closed stray port. On Windows the
+    // resulting ICMP surfaces as ConnectionReset on the next receive.
+    let mut responder = UnknownTidResponder::default();
+    let mut buffer = [0u8; 64];
+    let len = tokio::time::timeout(
+        Duration::from_secs(30),
+        recv_from_transfer_peer(&server, good_addr, &mut buffer, &mut responder),
+    )
+    .await
+    .unwrap()
+    .expect("a reset from a closed foreign port must not abort the transfer");
+    assert!(matches!(
+        TftpPacket::parse(&buffer[..len], good_addr).unwrap(),
+        TftpPacket::Ack(ack) if ack.block == 0
+    ));
+    assert_eq!(
+        responder.responses_remaining,
+        MAX_UNKNOWN_TID_RESPONSES_PER_EXCHANGE - 1
+    );
+}
+
 #[test]
 fn ack_spin_is_limited_to_an_idle_linux_server_and_stops_after_misses() {
     let mut spin = AckSpin::default();
