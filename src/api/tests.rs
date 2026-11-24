@@ -1267,7 +1267,9 @@ async fn test_http_cache_reuses_recent_unmanaged_snapshot_without_touching_tftp_
     let mut state = test_state_with_root(root.clone());
     let mutable = Arc::get_mut(&mut state).unwrap();
     let mut config = (*mutable.config).clone();
-    config.server.unmanaged_cache_validation_interval_ms = 1_000;
+    // A real-clock window: an hour so a stalled runner cannot expire it
+    // between the two requests this test expects to share one snapshot.
+    config.server.unmanaged_cache_validation_interval_ms = 3_600_000;
     mutable.config = Arc::new(config);
     let client_ip = IpAddr::from([10, 33, 128, 160]);
     state.insert_boot_session(

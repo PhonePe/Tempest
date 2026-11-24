@@ -366,9 +366,11 @@ fn server_uses_configured_tftp_per_ip_request_limit() {
     config.server.tftp_requests_per_ip_per_second = 1;
     let state = TftpServer::new(config).state();
     let client = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+    // One instant: a stalled thread must not cross the one-second window.
+    let now = Instant::now();
 
-    assert!(state.tftp_rate_limiter.check(client));
-    assert!(!state.tftp_rate_limiter.check(client));
+    assert!(state.tftp_rate_limiter.check_at(client, now));
+    assert!(!state.tftp_rate_limiter.check_at(client, now));
 }
 
 #[test]
@@ -377,9 +379,10 @@ fn server_uses_configured_http_per_ip_request_limit() {
     config.server.http_requests_per_ip_per_second = 1;
     let state = TftpServer::new(config).state();
     let client = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 11));
+    let now = Instant::now();
 
-    assert!(state.http_rate_limiter.check(client));
-    assert!(!state.http_rate_limiter.check(client));
+    assert!(state.http_rate_limiter.check_at(client, now));
+    assert!(!state.http_rate_limiter.check_at(client, now));
 }
 
 #[test]
@@ -1855,7 +1858,9 @@ fn tftp_client_limit_released_while_terminal_audit_waits() {
         std::fs::write(&artifact, b"artifact").unwrap();
         let next_artifact = root.path().join("next.bin");
         std::fs::write(&next_artifact, b"next artifact").unwrap();
-        let server = TftpServer::new(tftp_client_limit_config(root.path()));
+        let mut config = tftp_client_limit_config(root.path());
+        hold_retransmissions(&mut config);
+        let server = TftpServer::new(config);
         // Exercise the awaited legacy audit path without changing the writer API.
         // Unwrap permits the metrics observer's weak reference to remain unused.
         let mut state = Arc::try_unwrap(server.state).unwrap_or_else(|_| panic!("shared state"));
@@ -2138,10 +2143,12 @@ async fn unsuccessful_rrq_audit_retains_release_identity_and_progress() {
         let mut config = TempestConfig::default();
         config.server.bind = IpAddr::V4(Ipv4Addr::LOCALHOST);
         config.server.root = root.path().to_path_buf();
-        // The abort case must reach the server before its retry budget expires.
-        config.server.retransmit_interval_ms = 1_000;
-        config.server.min_retransmit_interval_ms = 1_000;
-        config.server.max_retransmit_interval_ms = 1_000;
+        // The abort case asserts no retransmission, so its ERROR must never race
+        // the timer; the timeout case needs one quick retry before giving up.
+        let rto_ms = if abort { 30_000 } else { 1_000 };
+        config.server.retransmit_interval_ms = rto_ms;
+        config.server.min_retransmit_interval_ms = rto_ms;
+        config.server.max_retransmit_interval_ms = rto_ms;
         config.server.max_retries = 1;
         config.boot_phases.clear();
         config.audit.enabled = true;

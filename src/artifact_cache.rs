@@ -1101,7 +1101,8 @@ mod tests {
             let path = path.clone();
             let expected = expected.clone();
             tasks.push(tokio::spawn(async move {
-                let (actual, _) = cache.recent_unmanaged_path(&path, 1_000).unwrap();
+                // Real clock: an hour-long window keeps a stalled task fresh.
+                let (actual, _) = cache.recent_unmanaged_path(&path, 3_600_000).unwrap();
                 assert!(Arc::ptr_eq(&expected, &actual));
             }));
         }

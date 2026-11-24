@@ -643,8 +643,8 @@ async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succee
     // The client's two rounds must finish inside BUDGET - RECEIVE_DELAY, and a
     // budget restarted at publication cannot end before RECEIVE_DELAY + BUDGET.
     // Both margins are whole seconds so loaded CI runners cannot cross them.
-    const BUDGET: Duration = Duration::from_secs(4);
-    const RECEIVE_DELAY: Duration = Duration::from_secs(2);
+    const BUDGET: Duration = Duration::from_secs(7);
+    const RECEIVE_DELAY: Duration = Duration::from_secs(3);
     let directory = tempfile::tempdir().unwrap();
     let state = crate::server::TftpServer::new(transfer_deadline_config(
         directory.path(),
@@ -1704,7 +1704,9 @@ async fn ack_spin_acknowledges_a_pending_window_and_falls_back_when_empty() {
     let mut pacing_session: Option<Box<dyn TransferPacingSession>> = None;
     let mut metrics = TransferMetrics::default();
     let mut unknown_tid_responder = UnknownTidResponder::default();
-    let mut window = WindowState::new(1, Duration::from_millis(30), 1);
+    // await_read_ack checks its deadline before the socket, and a queued ACK
+    // still needs a reactor readiness round trip; keep that step's RTO long.
+    let mut window = WindowState::new(1, Duration::from_secs(10), 1);
     let mut spin = AckSpin::default();
     let deadline = tokio::time::sleep(Duration::ZERO);
     tokio::pin!(deadline);
@@ -1738,6 +1740,8 @@ async fn ack_spin_acknowledges_a_pending_window_and_falls_back_when_empty() {
     #[cfg(target_os = "linux")]
     assert_eq!(spin.consecutive_misses, 0);
 
+    // Only the empty-socket step needs a short timer.
+    let mut window = WindowState::new(1, Duration::from_millis(30), 1);
     window.block_sent();
     let timed_out = await_read_ack(
         ReadAcknowledgment {
@@ -1780,7 +1784,8 @@ async fn test_duplicate_ack_is_not_a_retransmission_event() {
     let mut pacing_session: Option<Box<dyn TransferPacingSession>> = None;
     let mut metrics = TransferMetrics::default();
     let mut unknown_tid_responder = UnknownTidResponder::default();
-    let mut window = WindowState::new(1, Duration::from_secs(1), 1);
+    // The deadline is polled before the socket; it must not beat queued ACKs.
+    let mut window = WindowState::new(1, Duration::from_secs(10), 1);
     window.block_sent();
 
     client
@@ -1875,7 +1880,8 @@ async fn final_window_requires_the_last_cumulative_ack() {
     let mut pacing_session: Option<Box<dyn TransferPacingSession>> = None;
     let mut metrics = TransferMetrics::default();
     let mut unknown_tid_responder = UnknownTidResponder::default();
-    let mut window = WindowState::new(2, Duration::from_secs(1), 1);
+    // The deadline is polled before the socket; it must not beat queued ACKs.
+    let mut window = WindowState::new(2, Duration::from_secs(10), 1);
     window.block_sent();
     window.block_sent();
     let deadline = tokio::time::sleep(Duration::ZERO);
@@ -1935,7 +1941,7 @@ async fn final_window_requires_the_last_cumulative_ack() {
 fn oack_test_options(max_retries: u8) -> NegotiatedOptions {
     NegotiatedOptions {
         // Long enough that a delayed client cannot exhaust retries it does not intend to.
-        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(2)),
+        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(3)),
         max_retries,
         ..NegotiatedOptions::default()
     }

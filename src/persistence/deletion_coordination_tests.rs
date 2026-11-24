@@ -1951,14 +1951,7 @@ where
         test(store, peer, identity).await;
     })
     .await;
-    if !url.starts_with("mysql:") {
-        sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()")
-            .bind(&database).execute(&admin).await.unwrap();
-    }
-    sqlx::query(&format!("DROP DATABASE {database}"))
-        .execute(&admin)
-        .await
-        .unwrap();
+    crate::persistence::drop_test_database(&admin, &url, &database).await;
     admin.close().await;
     if let Err(error) = result {
         if error.is_panic() {

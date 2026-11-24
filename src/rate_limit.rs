@@ -53,7 +53,7 @@ impl PerIpRateLimiter {
         self.check_at(ip, Instant::now())
     }
 
-    fn check_at(&self, ip: std::net::IpAddr, now: Instant) -> bool {
+    pub(crate) fn check_at(&self, ip: std::net::IpAddr, now: Instant) -> bool {
         // Zero is an explicit operator opt-out for trusted benchmark networks.
         // The secure default remains enabled and no address state is retained.
         if self.max_per_sec == 0 {
