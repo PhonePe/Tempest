@@ -1871,6 +1871,51 @@ pub(crate) async fn test_database_slot() -> tokio::sync::SemaphorePermit<'static
         .expect("test database semaphore is never closed")
 }
 
+/// Runs `test` against a fresh sibling database that is dropped afterwards.
+///
+/// Use it for tests whose effects are global to a database (revisions,
+/// retention pruning, snapshot limits), so they cannot disturb concurrently
+/// running tests that share the base test database.
+#[cfg(test)]
+pub(crate) async fn with_isolated_test_database<F, Fut>(test: F)
+where
+    F: FnOnce(String) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let Some(url) = test_database_url() else {
+        return;
+    };
+    let _database_slot = test_database_slot().await;
+    sqlx::any::install_default_drivers();
+    let admin = sqlx::AnyPool::connect(&url).await.unwrap();
+    let database = format!("tempest_isolated_{}", uuid::Uuid::new_v4().simple());
+    // The identifier is generated locally from a fixed prefix and UUID hex.
+    sqlx::query(&format!("CREATE DATABASE {database}"))
+        .execute(&admin)
+        .await
+        .expect("isolated database tests require CREATE DATABASE permission on the disposable test server");
+    let mut options: sqlx::any::AnyConnectOptions = url.parse().unwrap();
+    options.database_url.set_path(&format!("/{database}"));
+    let isolated_url = options.database_url.to_string();
+    // Joining a child task lets cleanup run even when an assertion panics.
+    let result = tokio::spawn(test(isolated_url)).await;
+    if !url.starts_with("mysql:") {
+        sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()")
+            .bind(&database).execute(&admin).await.unwrap();
+    }
+    sqlx::query(&format!("DROP DATABASE {database}"))
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
+    if let Err(error) = result {
+        if error.is_panic() {
+            std::panic::resume_unwind(error.into_panic());
+        }
+        panic!("isolated database test task was cancelled: {error}");
+    }
+}
+
 #[cfg(test)]
 #[path = "persistence/pin_tests.rs"]
 mod pin_tests;
@@ -2006,10 +2051,11 @@ mod tests {
 
     #[tokio::test]
     async fn control_snapshot_waits_for_the_complete_mutation() {
-        let Some(database_url) = super::test_database_url() else {
-            return;
-        };
-        let _database_slot = super::test_database_slot().await;
+        super::with_isolated_test_database(assert_control_snapshot_waits_for_the_complete_mutation)
+            .await;
+    }
+
+    async fn assert_control_snapshot_waits_for_the_complete_mutation(database_url: String) {
         let store = PersistenceStore::connect(&database_url).await.unwrap();
         let profile = format!("snapshot-{}", uuid::Uuid::new_v4());
         let group = version_group(&profile, "release", 1);
@@ -2069,10 +2115,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_version_writers_reject_stale_revision() {
-        let Some(database_url) = super::test_database_url() else {
-            return;
-        };
-        let _database_slot = super::test_database_slot().await;
+        super::with_isolated_test_database(assert_concurrent_version_writers_reject_stale_revision)
+            .await;
+    }
+
+    async fn assert_concurrent_version_writers_reject_stale_revision(database_url: String) {
         let store = PersistenceStore::connect(&database_url).await.unwrap();
         let profile = format!(
             "cas-{}-{}",
@@ -2134,10 +2181,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_durable_group_retention_preserves_pins_and_loader_bounds() {
-        let Some(database_url) = super::test_database_url() else {
-            return;
-        };
-        let _database_slot = super::test_database_slot().await;
+        // Retention prunes the oldest inactive groups of every profile, so this
+        // test would delete groups that concurrent tests still assert on.
+        super::with_isolated_test_database(assert_durable_group_retention).await;
+    }
+
+    async fn assert_durable_group_retention(database_url: String) {
         let store = PersistenceStore::connect(&database_url).await.unwrap();
         let profile = format!(
             "retention-{}-{}",
@@ -2209,10 +2258,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_boot_session_pin_rejects_stale_epoch() {
-        let Some(database_url) = super::test_database_url() else {
-            return;
-        };
-        let _database_slot = super::test_database_slot().await;
+        super::with_isolated_test_database(assert_boot_session_pin_rejects_stale_epoch).await;
+    }
+
+    async fn assert_boot_session_pin_rejects_stale_epoch(database_url: String) {
         let store = PersistenceStore::connect(&database_url).await.unwrap();
         let client_ip = IpAddr::V6(std::net::Ipv6Addr::from(uuid::Uuid::new_v4().as_u128()));
         let profile = format!("epoch-{}", uuid::Uuid::new_v4());

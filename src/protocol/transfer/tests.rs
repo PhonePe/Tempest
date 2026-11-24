@@ -2664,39 +2664,36 @@ fn test_temp_file_guard_keeps_after_commit() {
 
 #[test]
 fn test_symlink_escape_check_non_symlink() {
-    let dir = std::env::temp_dir().join("tempest_symlink_test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("regular.bin");
     std::fs::write(&file_path, b"test").unwrap();
     let result = check_symlink_escape(&file_path, &dir);
     assert!(result.is_ok());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[cfg(unix)]
 #[test]
 fn test_symlink_inside_root_ok() {
-    let dir = std::env::temp_dir().join("tempest_symlink_inside_test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let target = dir.join("target.bin");
     std::fs::write(&target, b"data").unwrap();
     let link = dir.join("link.bin");
     std::os::unix::fs::symlink(&target, &link).unwrap();
     let result = check_symlink_escape(&link, &dir);
     assert!(result.is_ok());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[cfg(unix)]
 #[test]
 fn test_symlink_escape_root_rejected() {
-    let dir = std::env::temp_dir().join("tempest_symlink_escape_test");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let link = dir.join("evil_link");
     std::os::unix::fs::symlink("/etc/hosts", &link).unwrap();
     let result = check_symlink_escape(&link, &dir);
     assert!(result.is_err());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
