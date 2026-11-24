@@ -3,15 +3,14 @@
 
 use super::*;
 use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
-static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn temp_audit_dir() -> PathBuf {
-    let id = TEST_COUNTER.fetch_add(1, AtomicOrdering::SeqCst);
-    let dir = std::env::temp_dir().join(format!("tempest_audit_test_{}_{id}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// A unique directory removed on drop, so a rerun never inherits torn logs or
+/// symlinks that earlier tests leave behind deliberately.
+fn temp_audit_dir() -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix("tempest_audit_test_")
+        .tempdir()
+        .unwrap()
 }
 
 fn terminal_record(sequence: usize) -> AuditRecord {
@@ -224,7 +223,7 @@ fn maximally_escaped_record() -> AuditRecord {
 #[test]
 fn validated_entry_size_bound_covers_json_escaping() {
     let dir = temp_audit_dir();
-    let log = AuditLog::new(dir.join("audit.jsonl")).unwrap();
+    let log = AuditLog::new(dir.path().join("audit.jsonl")).unwrap();
     let record = maximally_escaped_record();
     let (_, estimated) = encode_audit_record(&record).unwrap();
     let mut entry = log
@@ -309,7 +308,7 @@ fn audit_byte_reservation_shrinks_to_encoded_upper_bound() {
 #[test]
 fn audit_admission_reports_byte_exhaustion_separately() {
     let dir = temp_audit_dir();
-    let log = Arc::new(AuditLog::new(dir.join("audit.jsonl")).unwrap());
+    let log = Arc::new(AuditLog::new(dir.path().join("audit.jsonl")).unwrap());
     let writer = AuditWriter::start_with_queue_capacity(
         log,
         MAX_AUDIT_ENTRY_BYTES,
@@ -329,7 +328,7 @@ fn audit_admission_reports_byte_exhaustion_separately() {
 #[test]
 fn audit_admission_reports_queue_exhaustion_separately() {
     let dir = temp_audit_dir();
-    let log = Arc::new(AuditLog::new(dir.join("audit.jsonl")).unwrap());
+    let log = Arc::new(AuditLog::new(dir.path().join("audit.jsonl")).unwrap());
     let writer = AuditWriter::start_with_queue_capacity(
         log,
         2 * MAX_AUDIT_ENTRY_BYTES,
@@ -350,7 +349,7 @@ fn audit_admission_reports_queue_exhaustion_separately() {
 #[tokio::test]
 async fn audit_writer_group_commits_before_releasing_reservations() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
+    let log_path = dir.path().join("audit.jsonl");
     let log = Arc::new(AuditLog::new(log_path.clone()).unwrap());
     let writer = AuditWriter::start(
         log.clone(),
@@ -387,7 +386,7 @@ async fn audit_writer_group_commits_before_releasing_reservations() {
 #[test]
 fn audit_log_batch_preserves_order_and_has_no_cryptographic_envelope() {
     let dir = temp_audit_dir();
-    let log = AuditLog::new(dir.join("audit.jsonl")).unwrap();
+    let log = AuditLog::new(dir.path().join("audit.jsonl")).unwrap();
     let records: Vec<_> = (0..128).map(terminal_delivery_record).collect();
     let references: Vec<_> = records.iter().collect();
     let commit = log.append_record_batch(&references).unwrap();
@@ -413,7 +412,7 @@ fn audit_log_batch_preserves_order_and_has_no_cryptographic_envelope() {
 #[test]
 fn audit_log_restart_recovers_only_bounded_tail_state() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
+    let log_path = dir.path().join("audit.jsonl");
     let log = AuditLog::new(log_path.clone()).unwrap();
     for sequence in 0..3 {
         log.append_record_batch(&[&terminal_record(sequence)])
@@ -436,8 +435,8 @@ fn audit_log_restart_recovers_only_bounded_tail_state() {
 #[test]
 fn audit_log_tail_recovery_ignores_a_partial_utf8_prefix() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
-    let final_entry = AuditLog::new(dir.join("seed.jsonl"))
+    let log_path = dir.path().join("audit.jsonl");
+    let final_entry = AuditLog::new(dir.path().join("seed.jsonl"))
         .unwrap()
         .build_entry_at(
             "192.0.2.10".into(),
@@ -475,7 +474,7 @@ fn audit_log_tail_recovery_ignores_a_partial_utf8_prefix() {
 #[test]
 fn audit_log_restart_repairs_only_crash_torn_final_lines() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
+    let log_path = dir.path().join("audit.jsonl");
     let log = AuditLog::new(log_path.clone()).unwrap();
     log.append_record_batch(&[&terminal_record(0)]).unwrap();
     drop(log);
@@ -503,7 +502,7 @@ fn audit_log_restart_repairs_only_crash_torn_final_lines() {
 #[test]
 fn audit_log_torn_line_repair_is_bounded() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
+    let log_path = dir.path().join("audit.jsonl");
     let log = AuditLog::new(log_path.clone()).unwrap();
     log.append_record_batch(&[&terminal_record(0)]).unwrap();
     drop(log);
@@ -523,8 +522,8 @@ fn audit_log_torn_line_repair_is_bounded() {
 #[test]
 fn unrelated_legacy_spool_does_not_block_direct_jsonl_appends() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
-    let spool_path = dir.join("audit.jsonl.spool");
+    let log_path = dir.path().join("audit.jsonl");
+    let spool_path = dir.path().join("audit.jsonl.spool");
     std::fs::write(&spool_path, b"unrelated legacy bytes").unwrap();
 
     let log = AuditLog::new(log_path).unwrap();
@@ -540,7 +539,7 @@ fn unrelated_legacy_spool_does_not_block_direct_jsonl_appends() {
 #[test]
 fn audit_log_rotation_retention_is_simple_and_bounded() {
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
+    let log_path = dir.path().join("audit.jsonl");
     let log = AuditLog::new_with_rotation(log_path.clone(), Some(1024), 2).unwrap();
     for batch in 0..8 {
         let records: Vec<_> = (0..16)
@@ -550,8 +549,8 @@ fn audit_log_rotation_retention_is_simple_and_bounded() {
         log.append_record_batch(&references).unwrap();
     }
     assert!(AuditLog::rotated_log_paths(&log_path).len() <= 2);
-    assert!(!dir.join("audit.anchor").exists());
-    assert!(!dir.join("audit.checkpoint").exists());
+    assert!(!dir.path().join("audit.anchor").exists());
+    assert!(!dir.path().join("audit.checkpoint").exists());
     drop(log);
     assert!(AuditLog::new_with_rotation(log_path, Some(1024), 2).is_ok());
 }
@@ -562,8 +561,8 @@ async fn audit_writer_failure_is_fail_closed_and_counted_separately() {
     use std::os::unix::fs::symlink;
 
     let dir = temp_audit_dir();
-    let log_path = dir.join("audit.jsonl");
-    let target_path = dir.join("target.jsonl");
+    let log_path = dir.path().join("audit.jsonl");
+    let target_path = dir.path().join("target.jsonl");
     let log = Arc::new(AuditLog::new(log_path.clone()).unwrap());
     let healthy = Arc::new(AtomicBool::new(true));
     let writer = AuditWriter::start(log, 1024 * 1024, healthy.clone()).unwrap();

@@ -366,9 +366,11 @@ fn server_uses_configured_tftp_per_ip_request_limit() {
     config.server.tftp_requests_per_ip_per_second = 1;
     let state = TftpServer::new(config).state();
     let client = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10));
+    // One instant: a stalled thread must not cross the one-second window.
+    let now = Instant::now();
 
-    assert!(state.tftp_rate_limiter.check(client));
-    assert!(!state.tftp_rate_limiter.check(client));
+    assert!(state.tftp_rate_limiter.check_at(client, now));
+    assert!(!state.tftp_rate_limiter.check_at(client, now));
 }
 
 #[test]
@@ -377,9 +379,10 @@ fn server_uses_configured_http_per_ip_request_limit() {
     config.server.http_requests_per_ip_per_second = 1;
     let state = TftpServer::new(config).state();
     let client = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 11));
+    let now = Instant::now();
 
-    assert!(state.http_rate_limiter.check(client));
-    assert!(!state.http_rate_limiter.check(client));
+    assert!(state.http_rate_limiter.check_at(client, now));
+    assert!(!state.http_rate_limiter.check_at(client, now));
 }
 
 #[test]
@@ -1097,6 +1100,7 @@ async fn duplicate_rrq_uses_one_transfer_tid() {
     config.server.bind = IpAddr::V4(Ipv4Addr::LOCALHOST);
     config.server.port = 0;
     config.server.root = root.path().to_path_buf();
+    hold_retransmissions(&mut config);
     let server = Arc::new(TftpServer::new(config));
     let state = server.state();
     state
@@ -1229,6 +1233,17 @@ fn tftp_client_limit_config(root: &Path) -> TempestConfig {
     config
 }
 
+/// Pins the server retransmission timer far beyond any CI scheduling delay.
+///
+/// Wire tests read the next datagram and assert its type or that nothing was
+/// retransmitted. With the 1s default, a client delayed by a loaded runner
+/// receives a correct retransmission where it expects the next packet.
+fn hold_retransmissions(config: &mut TempestConfig) {
+    config.server.retransmit_interval_ms = 30_000;
+    config.server.min_retransmit_interval_ms = 30_000;
+    config.server.max_retransmit_interval_ms = 30_000;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sequential_rrqs_on_one_client_tid_do_not_wait_for_retransmission() {
     let root = tempfile::tempdir().unwrap();
@@ -1240,6 +1255,7 @@ async fn sequential_rrqs_on_one_client_tid_do_not_wait_for_retransmission() {
     // the client's next RRQ on a loaded host, so allow every iteration's permit.
     config.server.max_tftp_transfers_per_ip = 128;
     config.audit.enabled = false;
+    hold_retransmissions(&mut config);
     let server = TftpServer::new(config);
     let state = server.state();
     state
@@ -1301,6 +1317,7 @@ async fn negotiated_rrq_handoff_preserves_handshake_and_source_quota() {
     std::fs::write(&artifact, b"artifact").unwrap();
     let mut config = tftp_client_limit_config(root.path());
     config.audit.enabled = false;
+    hold_retransmissions(&mut config);
     let server = TftpServer::new(config);
     let state = server.state();
     state
@@ -1372,6 +1389,7 @@ async fn tftp_client_policy_wire_exchange(is_write: bool, timeout: u8, accept: b
     config.server.max_window_size = 2;
     config.boot_phases.clear();
     config.audit.enabled = false;
+    hold_retransmissions(&mut config);
     let server = TftpServer::new(config);
     let state = server.state();
     let group = state
@@ -1840,7 +1858,9 @@ fn tftp_client_limit_released_while_terminal_audit_waits() {
         std::fs::write(&artifact, b"artifact").unwrap();
         let next_artifact = root.path().join("next.bin");
         std::fs::write(&next_artifact, b"next artifact").unwrap();
-        let server = TftpServer::new(tftp_client_limit_config(root.path()));
+        let mut config = tftp_client_limit_config(root.path());
+        hold_retransmissions(&mut config);
+        let server = TftpServer::new(config);
         // Exercise the awaited legacy audit path without changing the writer API.
         // Unwrap permits the metrics observer's weak reference to remain unused.
         let mut state = Arc::try_unwrap(server.state).unwrap_or_else(|_| panic!("shared state"));
@@ -2123,10 +2143,12 @@ async fn unsuccessful_rrq_audit_retains_release_identity_and_progress() {
         let mut config = TempestConfig::default();
         config.server.bind = IpAddr::V4(Ipv4Addr::LOCALHOST);
         config.server.root = root.path().to_path_buf();
-        // The abort case must reach the server before its retry budget expires.
-        config.server.retransmit_interval_ms = 1_000;
-        config.server.min_retransmit_interval_ms = 1_000;
-        config.server.max_retransmit_interval_ms = 1_000;
+        // The abort case asserts no retransmission, so its ERROR must never race
+        // the timer; the timeout case needs one quick retry before giving up.
+        let rto_ms = if abort { 30_000 } else { 1_000 };
+        config.server.retransmit_interval_ms = rto_ms;
+        config.server.min_retransmit_interval_ms = rto_ms;
+        config.server.max_retransmit_interval_ms = rto_ms;
         config.server.max_retries = 1;
         config.boot_phases.clear();
         config.audit.enabled = true;
@@ -2809,6 +2831,13 @@ async fn metrics_text_maintenance_refreshes_on_blocking_pool_and_releases_on_can
     assert!(task.await.unwrap_err().is_cancelled());
     drop(state);
     drop(server);
-    assert!(weak_state.upgrade().is_none());
-    assert!(cache.upgrade().is_none());
+    // Aborting cannot interrupt a refresh already running on the blocking
+    // pool; it releases its upgraded state when the render returns.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while weak_state.upgrade().is_some() || cache.upgrade().is_some() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancelled maintenance must release server state");
 }

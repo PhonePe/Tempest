@@ -192,7 +192,7 @@ async fn serving_probe_deadline_bounds_mutex_wait_without_poisoning_the_owner() 
             Duration::from_millis(20),
             store.ensure_serving_admission(true),
         ).await.is_err());
-        let results = tokio::time::timeout(COORDINATION_TIMEOUT + Duration::from_secs(2), async {
+        let results = tokio::time::timeout(COORDINATION_TIMEOUT + Duration::from_secs(25), async {
             tokio::join!(
                 store.ensure_serving_admission(true),
                 store.ensure_serving_admission(true),
@@ -214,11 +214,13 @@ async fn late_lease_mutex_waiter_gets_a_full_probe_budget_without_poisoning() {
         store.ensure_serving_admission(true).await.unwrap();
         // Probe latency exceeds what remains of the admission deadline after a
         // long mutex wait; a healthy database must not poison the lease.
-        store.set_serving_probe_delay_for_test(Duration::from_secs(2));
+        // Release with 2.5s of the admission deadline left for the mutex wake-up;
+        // the 2.6s probe still overruns that remainder but fits a fresh budget
+        // with 2.4s to spare.
+        store.set_serving_probe_delay_for_test(Duration::from_millis(2600));
         let held = store.serving_transaction_for_test().await;
         let release = async {
-            // One second of slack absorbs scheduling delay; the 2s probe still overruns it.
-            tokio::time::sleep(COORDINATION_TIMEOUT - Duration::from_secs(1)).await;
+            tokio::time::sleep(COORDINATION_TIMEOUT - Duration::from_millis(2500)).await;
             drop(held);
         };
         let (result, ()) = tokio::join!(store.ensure_serving_admission(true), release);
@@ -1949,14 +1951,7 @@ where
         test(store, peer, identity).await;
     })
     .await;
-    if !url.starts_with("mysql:") {
-        sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()")
-            .bind(&database).execute(&admin).await.unwrap();
-    }
-    sqlx::query(&format!("DROP DATABASE {database}"))
-        .execute(&admin)
-        .await
-        .unwrap();
+    crate::persistence::drop_test_database(&admin, &url, &database).await;
     admin.close().await;
     if let Err(error) = result {
         if error.is_panic() {
@@ -2277,7 +2272,7 @@ async fn lock_wait_deadline_is_typed_and_does_not_leave_a_reader_or_reservation(
         // Both actual protocol deadlines expire while a durable writer holds
         // the singleton; an outer bound guards against a broken timeout wrapper.
         let (acquire, reserve) =
-            tokio::time::timeout(COORDINATION_TIMEOUT + Duration::from_secs(2), async {
+            tokio::time::timeout(COORDINATION_TIMEOUT + Duration::from_secs(25), async {
                 tokio::join!(
                     peer.acquire_group_reader(&identity, &reader),
                     peer.reserve_group_deletion(&identity, &reservation),

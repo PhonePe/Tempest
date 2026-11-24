@@ -53,7 +53,7 @@ impl PerIpRateLimiter {
         self.check_at(ip, Instant::now())
     }
 
-    fn check_at(&self, ip: std::net::IpAddr, now: Instant) -> bool {
+    pub(crate) fn check_at(&self, ip: std::net::IpAddr, now: Instant) -> bool {
         // Zero is an explicit operator opt-out for trusted benchmark networks.
         // The secure default remains enabled and no address state is retained.
         if self.max_per_sec == 0 {
@@ -285,15 +285,6 @@ mod tests {
         assert_eq!(admitted, 64);
         assert_eq!(limiter.tracked_entries.load(Ordering::Acquire), 64);
         assert_eq!(limiter.counters.len(), 64);
-    }
-
-    #[test]
-    fn test_rate_limiter_blocks_after_quota_exhausted() {
-        let now = Instant::now();
-        let rl = PerIpRateLimiter::new(1, "test");
-        let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        assert!(rl.check_at(ip, now));
-        assert!(!rl.check_at(ip, now));
     }
 
     #[test]

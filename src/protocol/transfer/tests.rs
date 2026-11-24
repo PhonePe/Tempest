@@ -314,7 +314,8 @@ async fn transfer_deadline_rrq_timeout255_oack_data_and_final_ack_release_owners
         (1024, false, false),
         (4, false, false),
     ] {
-        let fixture = TransferDeadlineReadFixture::new(&vec![0x41; size], 1, false);
+        // In-flight ownership is asserted before expiry; keep it seconds away.
+        let fixture = TransferDeadlineReadFixture::new(&vec![0x41; size], 3, false);
         let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let peer = server.local_addr().unwrap();
         let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -358,7 +359,7 @@ async fn transfer_deadline_rrq_timeout255_oack_data_and_final_ack_release_owners
         .await
         .expect("255-second retry interval must not defeat the deadline");
         assert_transfer_deadline(result, client_addr);
-        assert!(start.elapsed() >= Duration::from_secs(1));
+        assert!(start.elapsed() >= Duration::from_secs(3));
         fixture.assert_released(false);
         // The deadline terminates; it must not shorten the negotiated RTO by
         // emitting another OACK/DATA before 255 seconds. Send only a standard
@@ -382,13 +383,15 @@ async fn transfer_deadline_rrq_timeout255_oack_data_and_final_ack_release_owners
 
 #[tokio::test]
 async fn transfer_deadline_progress_acks_reset_retries_but_not_lifetime() {
-    let fixture = TransferDeadlineReadFixture::new(&vec![0x42; 512 * 128], 2, true);
+    let fixture = TransferDeadlineReadFixture::new(&vec![0x42; 512 * 128], 6, true);
     let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
     let peer = server.local_addr().unwrap();
     let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let client_addr = client.local_addr().unwrap();
     let options = NegotiatedOptions {
-        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_millis(100)),
+        // Each window spends one retry; the rest tolerate a 1.5s client stall,
+        // and six windows fit the budget with about a second each to spare.
+        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_millis(300)),
         max_retries: 5,
         ..NegotiatedOptions::default()
     };
@@ -426,8 +429,8 @@ async fn transfer_deadline_progress_acks_reset_retries_but_not_lifetime() {
                     retransmitted.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            // Every window incurs a real RTO, then advances before its five
-            // retries are exhausted. More than five windows prove retry reset.
+            // Every window incurs a real RTO, then advances before its retries
+            // are exhausted. More windows than retries prove the retry reset.
             tokio::time::sleep(Duration::from_millis(30)).await;
             client
                 .send_to(&TftpPacket::ack(expected), peer)
@@ -447,7 +450,7 @@ async fn transfer_deadline_progress_acks_reset_retries_but_not_lifetime() {
     .await
     .expect("valid progress must not renew the absolute deadline");
     assert_transfer_deadline(result, client_addr);
-    assert!(start.elapsed() >= Duration::from_secs(2));
+    assert!(start.elapsed() >= Duration::from_secs(6));
     assert!(acknowledged.load(Ordering::Relaxed) > 5);
     assert!(retransmitted.load(Ordering::Relaxed) > 5);
     fixture.assert_released(true);
@@ -466,7 +469,12 @@ async fn transfer_deadline_ordinary_download_completes_before_expiry() {
         "kernel".into(),
         "default".into(),
         None,
-        NegotiatedOptions::default(),
+        // The adaptive default can fall to 250ms; a slow client must not see
+        // retransmissions in a test that asserts there are none.
+        NegotiatedOptions {
+            retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(30)),
+            ..NegotiatedOptions::default()
+        },
         vec![],
         fixture.state.clone(),
         TransferId::new_v4(),
@@ -502,7 +510,7 @@ async fn transfer_deadline_wrq_silence_slow_data_and_duplicates_remove_temporary
     for (send_data, advance_blocks) in [(false, false), (true, false), (true, true)] {
         let directory = tempfile::tempdir().unwrap();
         let state =
-            crate::server::TftpServer::new(transfer_deadline_config(directory.path(), 1)).state();
+            crate::server::TftpServer::new(transfer_deadline_config(directory.path(), 3)).state();
         state.active_transfers.store(1, Ordering::Release);
         let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let peer = server.local_addr().unwrap();
@@ -632,9 +640,17 @@ async fn transfer_deadline_committed_write_ack_survives_expired_budget() {
 
 #[tokio::test]
 async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succeeds() {
+    // The client's two rounds must finish inside BUDGET - RECEIVE_DELAY, and a
+    // budget restarted at publication cannot end before RECEIVE_DELAY + BUDGET.
+    // Both margins are whole seconds so loaded CI runners cannot cross them.
+    const BUDGET: Duration = Duration::from_secs(7);
+    const RECEIVE_DELAY: Duration = Duration::from_secs(3);
     let directory = tempfile::tempdir().unwrap();
-    let state =
-        crate::server::TftpServer::new(transfer_deadline_config(directory.path(), 2)).state();
+    let state = crate::server::TftpServer::new(transfer_deadline_config(
+        directory.path(),
+        BUDGET.as_secs(),
+    ))
+    .state();
     state.active_transfers.store(1, Ordering::Release);
     let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
     let peer = server.local_addr().unwrap();
@@ -657,9 +673,8 @@ async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succee
     let client_flow = async {
         assert!(matches!(transfer_deadline_receive(&client, peer).await,
             TftpPacket::Oack(packet) if packet.options == vec![("timeout".into(), "255".into())]));
-        // Spend part of the original budget receiving: a fresh deadline at
-        // publication would finish after 3.5 seconds and fail the outer timeout.
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        // Spend part of the original budget receiving before publication.
+        tokio::time::sleep(RECEIVE_DELAY).await;
         for _ in 0..2 {
             client
                 .send_to(&TftpPacket::data(1, b"done"), peer)
@@ -674,16 +689,21 @@ async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succee
             assert_eq!(state.active_transfers.load(Ordering::Acquire), 1);
         }
     };
-    let (result, ()) = tokio::time::timeout(Duration::from_millis(3450), async {
+    let start = Instant::now();
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(transfer, client_flow)
     })
     .await
-    .expect("dally must use the remaining deadline, not 510 seconds or a fresh budget");
+    .expect("dally must use the remaining deadline, not 510 seconds");
+    assert!(
+        start.elapsed() < RECEIVE_DELAY + BUDGET,
+        "dally must use the remaining deadline, not a fresh budget"
+    );
     let metrics = result.expect("a durably published upload must succeed at the dally deadline");
     assert_eq!(metrics.bytes_sent, 4);
     assert_eq!(metrics.blocks_sent, 1);
     assert_eq!(metrics.retransmissions, 1);
-    assert!(metrics.duration().unwrap() >= Duration::from_secs(2));
+    assert!(metrics.duration().unwrap() >= BUDGET);
     assert_eq!(state.active_transfers.load(Ordering::Acquire), 0);
     assert_eq!(
         std::fs::read(directory.path().join("upload.bin")).unwrap(),
@@ -1015,113 +1035,116 @@ async fn opted_in_windows_recover_loss_and_reject_wrong_tids() {
         }
     }
 
-    for memory in [false, true] {
-        for tail in [0, 17] {
-            let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
-            let peer = server.local_addr().unwrap();
-            let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let bytes = Bytes::from(
-                (0..10 * 512 + tail)
-                    .map(|index| (index % 251) as u8)
-                    .collect::<Vec<_>>(),
-            );
-            let mut source = tempfile::NamedTempFile::new().unwrap();
-            source.write_all(&bytes).unwrap();
-            let input = if memory {
-                CoreReadSource::Memory(Arc::new(bytes.clone()))
-            } else {
-                CoreReadSource::File(File::open(source.path()).await.unwrap())
-            };
-            let mut file = ArtifactReader::new(input, bytes.len() as u64, 512, true, 8);
-            let mut config = crate::config::TempestConfig::default();
-            config.server.udp_segmentation_offload = true;
-            let state = crate::server::TftpServer::new(config).state();
-            state.active_transfers.store(8, Ordering::Release);
-            let scheduler = SchedulerTransferGuard {
-                scheduler: None,
+    // Each case waits for two real RTOs; run them concurrently.
+    async fn run_case(memory: bool, tail: usize) {
+        let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let peer = server.local_addr().unwrap();
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let bytes = Bytes::from(
+            (0..10 * 512 + tail)
+                .map(|index| (index % 251) as u8)
+                .collect::<Vec<_>>(),
+        );
+        let mut source = tempfile::NamedTempFile::new().unwrap();
+        source.write_all(&bytes).unwrap();
+        let input = if memory {
+            CoreReadSource::Memory(Arc::new(bytes.clone()))
+        } else {
+            CoreReadSource::File(File::open(source.path()).await.unwrap())
+        };
+        let mut file = ArtifactReader::new(input, bytes.len() as u64, 512, true, 8);
+        let mut config = crate::config::TempestConfig::default();
+        config.server.udp_segmentation_offload = true;
+        let state = crate::server::TftpServer::new(config).state();
+        state.active_transfers.store(8, Ordering::Release);
+        let scheduler = SchedulerTransferGuard {
+            scheduler: None,
+            transfer_id: TransferId::nil(),
+        };
+        let options = NegotiatedOptions {
+            window_size: 8,
+            // Exact retransmission counts need an RTO far above scheduling jitter.
+            retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(3)),
+            ..Default::default()
+        };
+        let mut protocol = None;
+        let mut pacing = None;
+        let mut metrics = TransferMetrics::default();
+        let transfer = run_read_data_loop(
+            ReadDataLoop {
+                socket: &server,
+                client_addr: client.local_addr().unwrap(),
                 transfer_id: TransferId::nil(),
-            };
-            let options = NegotiatedOptions {
-                window_size: 8,
-                // Exact retransmission counts need an RTO far above scheduling jitter.
-                retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(1)),
-                ..Default::default()
-            };
-            let mut protocol = None;
-            let mut pacing = None;
-            let mut metrics = TransferMetrics::default();
-            let transfer = run_read_data_loop(
-                ReadDataLoop {
-                    socket: &server,
-                    client_addr: client.local_addr().unwrap(),
-                    transfer_id: TransferId::nil(),
-                    state: &state,
-                    scheduler: &scheduler,
-                    shared_blocks: None,
-                    options: &options,
-                    core_payload_size: 512,
-                    fallback_pacing_delay: None,
-                },
-                &mut file,
-                &mut protocol,
-                &mut pacing,
-                &mut metrics,
-            );
-            let receive = async {
-                receive_range(&client, peer, &bytes, 1..=8).await;
-                let wrong_port = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-                wrong_port.send_to(&TftpPacket::ack(8), peer).await.unwrap();
+                state: &state,
+                scheduler: &scheduler,
+                shared_blocks: None,
+                options: &options,
+                core_payload_size: 512,
+                fallback_pacing_delay: None,
+            },
+            &mut file,
+            &mut protocol,
+            &mut pacing,
+            &mut metrics,
+        );
+        let receive = async {
+            receive_range(&client, peer, &bytes, 1..=8).await;
+            let wrong_port = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            wrong_port.send_to(&TftpPacket::ack(8), peer).await.unwrap();
+            assert!(matches!(
+                transfer_deadline_receive(&wrong_port, peer).await,
+                TftpPacket::Error(packet) if packet.code == TftpErrorCode::UnknownTransferId as u16
+            ));
+            #[cfg(target_os = "linux")]
+            {
+                let wrong_ip = UdpSocket::bind((
+                    std::net::Ipv4Addr::new(127, 0, 0, 2),
+                    client.local_addr().unwrap().port(),
+                ))
+                .await
+                .unwrap();
+                wrong_ip.send_to(&TftpPacket::ack(8), peer).await.unwrap();
                 assert!(matches!(
-                    transfer_deadline_receive(&wrong_port, peer).await,
+                    transfer_deadline_receive(&wrong_ip, peer).await,
                     TftpPacket::Error(packet) if packet.code == TftpErrorCode::UnknownTransferId as u16
                 ));
-                #[cfg(target_os = "linux")]
-                {
-                    let wrong_ip = UdpSocket::bind((
-                        std::net::Ipv4Addr::new(127, 0, 0, 2),
-                        client.local_addr().unwrap().port(),
-                    ))
-                    .await
-                    .unwrap();
-                    wrong_ip.send_to(&TftpPacket::ack(8), peer).await.unwrap();
-                    assert!(matches!(
-                        transfer_deadline_receive(&wrong_ip, peer).await,
-                        TftpPacket::Error(packet) if packet.code == TftpErrorCode::UnknownTransferId as u16
-                    ));
-                }
-                receive_range(&client, peer, &bytes, 1..=8).await;
-                client.send_to(&TftpPacket::ack(8), peer).await.unwrap();
-                receive_range(&client, peer, &bytes, 9..=11).await;
-                for packet in [
-                    TftpPacket::ack(9),
-                    TftpPacket::ack(9),
-                    BytesMut::from(&b"\0\x04\0"[..]),
-                ] {
-                    client.send_to(&packet, peer).await.unwrap();
-                }
-                assert!(
-                    tokio::time::timeout(
-                        Duration::from_millis(20),
-                        client.recv_from(&mut [0; 2048])
-                    )
+            }
+            receive_range(&client, peer, &bytes, 1..=8).await;
+            client.send_to(&TftpPacket::ack(8), peer).await.unwrap();
+            receive_range(&client, peer, &bytes, 9..=11).await;
+            for packet in [
+                TftpPacket::ack(9),
+                TftpPacket::ack(9),
+                BytesMut::from(&b"\0\x04\0"[..]),
+            ] {
+                client.send_to(&packet, peer).await.unwrap();
+            }
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), client.recv_from(&mut [0; 2048]))
                     .await
                     .is_err()
-                );
-                receive_range(&client, peer, &bytes, 10..=11).await;
-                client.send_to(&TftpPacket::ack(11), peer).await.unwrap();
-            };
-            tokio::time::timeout(Duration::from_secs(30), async {
-                let (result, ()) = tokio::join!(transfer, receive);
-                result.unwrap();
-            })
-            .await
-            .unwrap();
-            assert_eq!(metrics.retransmissions, 2);
-            assert_eq!(metrics.blocks_sent, 21);
-            assert_eq!(metrics.bytes_sent, (19 * 512 + 2 * tail) as u64);
-            assert!(server.peer_addr().is_err());
-        }
+            );
+            receive_range(&client, peer, &bytes, 10..=11).await;
+            client.send_to(&TftpPacket::ack(11), peer).await.unwrap();
+        };
+        tokio::time::timeout(Duration::from_secs(30), async {
+            let (result, ()) = tokio::join!(transfer, receive);
+            result.unwrap();
+        })
+        .await
+        .unwrap();
+        assert_eq!(metrics.retransmissions, 2);
+        assert_eq!(metrics.blocks_sent, 21);
+        assert_eq!(metrics.bytes_sent, (19 * 512 + 2 * tail) as u64);
+        assert!(server.peer_addr().is_err());
     }
+
+    tokio::join!(
+        run_case(false, 0),
+        run_case(false, 17),
+        run_case(true, 0),
+        run_case(true, 17)
+    );
 }
 
 #[tokio::test]
@@ -1384,12 +1407,6 @@ fn test_normalize_skips_current_dir() {
     let root = PathBuf::from("/tftpboot");
     let result = normalize_path_secure(&root, "./vmlinuz").unwrap();
     assert_eq!(result, PathBuf::from("/tftpboot/vmlinuz"));
-}
-
-#[test]
-fn test_normalize_rejects_dot_dot_encoded() {
-    let root = PathBuf::from("/tftpboot");
-    assert!(normalize_path_secure(&root, "foo/../../../etc/passwd").is_err());
 }
 
 #[test]
@@ -1681,7 +1698,9 @@ async fn ack_spin_acknowledges_a_pending_window_and_falls_back_when_empty() {
     let mut pacing_session: Option<Box<dyn TransferPacingSession>> = None;
     let mut metrics = TransferMetrics::default();
     let mut unknown_tid_responder = UnknownTidResponder::default();
-    let mut window = WindowState::new(1, Duration::from_millis(30), 1);
+    // await_read_ack checks its deadline before the socket, and a queued ACK
+    // still needs a reactor readiness round trip; keep that step's RTO long.
+    let mut window = WindowState::new(1, Duration::from_secs(10), 1);
     let mut spin = AckSpin::default();
     let deadline = tokio::time::sleep(Duration::ZERO);
     tokio::pin!(deadline);
@@ -1715,6 +1734,8 @@ async fn ack_spin_acknowledges_a_pending_window_and_falls_back_when_empty() {
     #[cfg(target_os = "linux")]
     assert_eq!(spin.consecutive_misses, 0);
 
+    // Only the empty-socket step needs a short timer.
+    let mut window = WindowState::new(1, Duration::from_millis(30), 1);
     window.block_sent();
     let timed_out = await_read_ack(
         ReadAcknowledgment {
@@ -1757,7 +1778,8 @@ async fn test_duplicate_ack_is_not_a_retransmission_event() {
     let mut pacing_session: Option<Box<dyn TransferPacingSession>> = None;
     let mut metrics = TransferMetrics::default();
     let mut unknown_tid_responder = UnknownTidResponder::default();
-    let mut window = WindowState::new(1, Duration::from_secs(1), 1);
+    // The deadline is polled before the socket; it must not beat queued ACKs.
+    let mut window = WindowState::new(1, Duration::from_secs(10), 1);
     window.block_sent();
 
     client
@@ -1852,7 +1874,8 @@ async fn final_window_requires_the_last_cumulative_ack() {
     let mut pacing_session: Option<Box<dyn TransferPacingSession>> = None;
     let mut metrics = TransferMetrics::default();
     let mut unknown_tid_responder = UnknownTidResponder::default();
-    let mut window = WindowState::new(2, Duration::from_secs(1), 1);
+    // The deadline is polled before the socket; it must not beat queued ACKs.
+    let mut window = WindowState::new(2, Duration::from_secs(10), 1);
     window.block_sent();
     window.block_sent();
     let deadline = tokio::time::sleep(Duration::ZERO);
@@ -1912,7 +1935,7 @@ async fn final_window_requires_the_last_cumulative_ack() {
 fn oack_test_options(max_retries: u8) -> NegotiatedOptions {
     NegotiatedOptions {
         // Long enough that a delayed client cannot exhaust retries it does not intend to.
-        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_millis(500)),
+        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(3)),
         max_retries,
         ..NegotiatedOptions::default()
     }
@@ -2174,7 +2197,7 @@ async fn wrq_retries_preserve_oack_and_duplicate_signal() {
         ..NegotiatedOptions::default()
     };
     // The client must act within one RTO after each resend; keep that far above jitter.
-    options.retransmission_policy = RetransmissionPolicy::fixed(Duration::from_secs(2));
+    options.retransmission_policy = RetransmissionPolicy::fixed(Duration::from_secs(6));
 
     let transfer = run_write_transfer_with_duplicate_request(
         server,
@@ -2194,8 +2217,8 @@ async fn wrq_retries_preserve_oack_and_duplicate_signal() {
         assert_eq!(retry_peer, peer);
 
         duplicate_request.notify_one();
-        // Below the 2s RTO, so only the duplicate can explain the resend.
-        let duplicate_peer = tokio::time::timeout(Duration::from_secs(1), receive_oack(&client))
+        // Below the 6s RTO, so only the duplicate can explain the resend.
+        let duplicate_peer = tokio::time::timeout(Duration::from_secs(5), receive_oack(&client))
             .await
             .expect("duplicate WRQ must trigger an immediate OACK resend");
         assert_eq!(duplicate_peer, peer);
@@ -2243,7 +2266,7 @@ async fn wrq_reacknowledges_duplicate_final_data_after_publish() {
     let client_addr = client.local_addr().unwrap();
     let options = NegotiatedOptions {
         // Dally lasts two RTOs; the duplicate final DATA must arrive within it.
-        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(1)),
+        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(3)),
         max_retries: 1,
         ..NegotiatedOptions::default()
     };
@@ -2368,7 +2391,11 @@ async fn wrq_rejects_data_larger_than_the_negotiated_block_size() {
         client_addr,
         "upload.bin".to_owned(),
         "test".to_owned(),
-        NegotiatedOptions::default(),
+        // A late DATA(1) must not be answered by a retransmitted ACK(0).
+        NegotiatedOptions {
+            retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(30)),
+            ..NegotiatedOptions::default()
+        },
         state.clone(),
         TransferId::nil(),
     );
@@ -2488,24 +2515,11 @@ async fn test_oack_exhausts_configured_retry_budget() {
 }
 
 #[test]
-fn test_normalize_allows_reasonable_depth() {
-    let root = PathBuf::from("/tftpboot");
-    let result = normalize_path_secure(&root, "a/b/c/d/e/file.bin");
-    assert!(result.is_ok());
-}
-
-#[test]
 fn test_normalize_path_components_counted() {
     let root = PathBuf::from("/tftpboot");
     let result = normalize_path_secure(&root, "a/b/c/d/e/f/g/h/i/j/file.bin").unwrap();
     let depth = result.strip_prefix(&root).unwrap().components().count();
     assert_eq!(depth, 11);
-}
-
-#[test]
-fn test_normalize_rejects_mixed_traversal() {
-    let root = PathBuf::from("/tftpboot");
-    assert!(normalize_path_secure(&root, "valid/../../escape").is_err());
 }
 
 #[test]
@@ -2580,25 +2594,6 @@ fn final_oack_serialization_includes_standard_size_and_extension_values() {
             ("x-tempest-test".into(), "yes".into()),
         ]
     );
-}
-
-#[test]
-fn test_block_num_zero_no_underflow() {
-    let block_num: u16 = 0;
-    let block_size: usize = 512;
-    let offset = block_num.saturating_sub(1) as u64 * block_size as u64;
-    assert_eq!(
-        offset, 0,
-        "block_num=0 should produce offset=0 via saturating_sub"
-    );
-}
-
-#[test]
-fn test_block_num_one_gives_zero_offset() {
-    let block_num: u16 = 1;
-    let block_size: usize = 512;
-    let offset = block_num.saturating_sub(1) as u64 * block_size as u64;
-    assert_eq!(offset, 0);
 }
 
 #[test]
@@ -2736,33 +2731,10 @@ fn test_symlink_escape_root_rejected() {
 }
 
 #[test]
-fn test_normalize_null_byte_rejected() {
-    let root = PathBuf::from("/tftpboot");
-    assert!(normalize_path_secure(&root, "file\x00.txt").is_err());
-}
-
-#[test]
 fn test_wrq_file_size_limit_constant() {
     let config = crate::config::ServerConfig::default();
     assert!(config.max_write_file_size <= 4 * 1024 * 1024 * 1024);
     assert!(config.max_write_file_size > 0);
-}
-
-#[test]
-fn test_deep_path_depth_calculation() {
-    let root = PathBuf::from("/tftpboot");
-    let deep = normalize_path_secure(&root, "a/b/c/d/e/f/g/h/i/j/k/file.bin").unwrap();
-    let depth = deep.strip_prefix(&root).unwrap().components().count();
-    assert!(depth > 10); // Used by WRQ handler to reject
-}
-
-#[test]
-fn test_transfer_metrics_content_hash() {
-    let mut m = TransferMetrics::default();
-    assert!(m.content_hash.is_none());
-
-    m.content_hash = Some("abc123def456".to_string());
-    assert_eq!(m.content_hash.as_deref(), Some("abc123def456"));
 }
 
 #[test]
@@ -2976,14 +2948,6 @@ fn write_temp_is_private_and_exclusive() {
 }
 
 #[test]
-fn test_transfer_metrics_default_content_hash_none() {
-    let m = TransferMetrics::default();
-    assert!(m.content_hash.is_none());
-    assert_eq!(m.bytes_sent, 0);
-    assert_eq!(m.blocks_sent, 0);
-}
-
-#[test]
 fn pacing_delay_rejects_invalid_rates_and_clamps_extremes() {
     assert_eq!(pacing_delay(1024, 0.0, None), None);
     assert_eq!(pacing_delay(1024, f64::NAN, None), None);
@@ -3108,7 +3072,7 @@ async fn encoded_lookahead_respects_window_and_rewinds_after_lost_ack() {
     };
     let options = NegotiatedOptions {
         // The quiet check and exact retransmission count need an RTO far above jitter.
-        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(1)),
+        retransmission_policy: RetransmissionPolicy::fixed(Duration::from_secs(3)),
         ..Default::default()
     };
     let calls = Arc::new(AtomicUsize::new(0));

@@ -848,13 +848,6 @@ fn test_group_count_tracks_switches() {
 }
 
 #[test]
-fn test_list_versions_is_empty_for_new_store() {
-    let store = VersionStore::new();
-    let versions = store.list_versions();
-    assert!(versions.is_empty());
-}
-
-#[test]
 fn test_hash_cache_accepts_entries_below_its_limit() {
     let store = VersionStore::new();
     let temp_root = tempfile::tempdir().unwrap();
