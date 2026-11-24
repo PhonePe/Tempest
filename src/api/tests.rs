@@ -2056,22 +2056,6 @@ async fn audit_query_task_failure_does_not_disclose_runtime_details() {
 }
 
 #[test]
-fn test_server_info_no_sensitive_fields() {
-    let info = ServerInfo {
-        name: "Tempest",
-        version: "0.1.0",
-        tftp_port: 69,
-        active_transfers: 0,
-        drain_mode: false,
-        uptime_secs: 0,
-    };
-    let json = serde_json::to_string(&info).unwrap();
-    assert!(!json.contains("root"));
-    assert!(!json.contains("tftpboot"));
-    assert!(!json.contains("max_concurrent"));
-}
-
-#[test]
 fn test_server_info_serialization() {
     let info = ServerInfo {
         name: "Tempest",
@@ -2081,41 +2065,19 @@ fn test_server_info_serialization() {
         drain_mode: true,
         uptime_secs: 100,
     };
-    let json = serde_json::to_string(&info).unwrap();
-    assert!(json.contains("\"drain_mode\":true"));
-    assert!(json.contains("\"active_transfers\":5"));
-    assert!(!json.contains("api_key"));
-    assert!(!json.contains("bind"));
-}
-
-#[test]
-fn test_server_info_has_uptime() {
-    let info = ServerInfo {
-        name: "Tempest",
-        version: "0.1.0",
-        tftp_port: 69,
-        active_transfers: 0,
-        drain_mode: false,
-        uptime_secs: 42,
-    };
-    let json = serde_json::to_string(&info).unwrap();
-    assert!(json.contains("\"uptime_secs\":42"));
-}
-
-#[test]
-fn test_server_info_no_write_enabled_leak() {
-    let info = ServerInfo {
-        name: "Tempest",
-        version: "0.1.0",
-        tftp_port: 69,
-        active_transfers: 0,
-        drain_mode: false,
-        uptime_secs: 0,
-    };
-    let json = serde_json::to_string(&info).unwrap();
-    assert!(!json.contains("write_enabled"));
-    assert!(!json.contains("max_write"));
-    assert!(!json.contains("api_key"));
+    // The exact public shape: no configuration or secrets, and no renamed or
+    // dropped fields.
+    assert_eq!(
+        serde_json::to_value(&info).unwrap(),
+        serde_json::json!({
+            "name": "Tempest",
+            "version": "0.1.0",
+            "tftp_port": 69,
+            "active_transfers": 5,
+            "drain_mode": true,
+            "uptime_secs": 100,
+        })
+    );
 }
 
 #[test]

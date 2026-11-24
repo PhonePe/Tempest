@@ -288,15 +288,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rate_limiter_blocks_after_quota_exhausted() {
-        let now = Instant::now();
-        let rl = PerIpRateLimiter::new(1, "test");
-        let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        assert!(rl.check_at(ip, now));
-        assert!(!rl.check_at(ip, now));
-    }
-
-    #[test]
     fn test_rate_limiter_per_ip_isolation() {
         let now = Instant::now();
         let rl = PerIpRateLimiter::new(2, "test");

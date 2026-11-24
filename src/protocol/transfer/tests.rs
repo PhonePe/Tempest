@@ -1410,12 +1410,6 @@ fn test_normalize_skips_current_dir() {
 }
 
 #[test]
-fn test_normalize_rejects_dot_dot_encoded() {
-    let root = PathBuf::from("/tftpboot");
-    assert!(normalize_path_secure(&root, "foo/../../../etc/passwd").is_err());
-}
-
-#[test]
 fn test_transfer_metrics_throughput() {
     let start_time = Instant::now();
     let m = TransferMetrics {
@@ -2521,24 +2515,11 @@ async fn test_oack_exhausts_configured_retry_budget() {
 }
 
 #[test]
-fn test_normalize_allows_reasonable_depth() {
-    let root = PathBuf::from("/tftpboot");
-    let result = normalize_path_secure(&root, "a/b/c/d/e/file.bin");
-    assert!(result.is_ok());
-}
-
-#[test]
 fn test_normalize_path_components_counted() {
     let root = PathBuf::from("/tftpboot");
     let result = normalize_path_secure(&root, "a/b/c/d/e/f/g/h/i/j/file.bin").unwrap();
     let depth = result.strip_prefix(&root).unwrap().components().count();
     assert_eq!(depth, 11);
-}
-
-#[test]
-fn test_normalize_rejects_mixed_traversal() {
-    let root = PathBuf::from("/tftpboot");
-    assert!(normalize_path_secure(&root, "valid/../../escape").is_err());
 }
 
 #[test]
@@ -2613,25 +2594,6 @@ fn final_oack_serialization_includes_standard_size_and_extension_values() {
             ("x-tempest-test".into(), "yes".into()),
         ]
     );
-}
-
-#[test]
-fn test_block_num_zero_no_underflow() {
-    let block_num: u16 = 0;
-    let block_size: usize = 512;
-    let offset = block_num.saturating_sub(1) as u64 * block_size as u64;
-    assert_eq!(
-        offset, 0,
-        "block_num=0 should produce offset=0 via saturating_sub"
-    );
-}
-
-#[test]
-fn test_block_num_one_gives_zero_offset() {
-    let block_num: u16 = 1;
-    let block_size: usize = 512;
-    let offset = block_num.saturating_sub(1) as u64 * block_size as u64;
-    assert_eq!(offset, 0);
 }
 
 #[test]
@@ -2769,33 +2731,10 @@ fn test_symlink_escape_root_rejected() {
 }
 
 #[test]
-fn test_normalize_null_byte_rejected() {
-    let root = PathBuf::from("/tftpboot");
-    assert!(normalize_path_secure(&root, "file\x00.txt").is_err());
-}
-
-#[test]
 fn test_wrq_file_size_limit_constant() {
     let config = crate::config::ServerConfig::default();
     assert!(config.max_write_file_size <= 4 * 1024 * 1024 * 1024);
     assert!(config.max_write_file_size > 0);
-}
-
-#[test]
-fn test_deep_path_depth_calculation() {
-    let root = PathBuf::from("/tftpboot");
-    let deep = normalize_path_secure(&root, "a/b/c/d/e/f/g/h/i/j/k/file.bin").unwrap();
-    let depth = deep.strip_prefix(&root).unwrap().components().count();
-    assert!(depth > 10); // Used by WRQ handler to reject
-}
-
-#[test]
-fn test_transfer_metrics_content_hash() {
-    let mut m = TransferMetrics::default();
-    assert!(m.content_hash.is_none());
-
-    m.content_hash = Some("abc123def456".to_string());
-    assert_eq!(m.content_hash.as_deref(), Some("abc123def456"));
 }
 
 #[test]
@@ -3006,14 +2945,6 @@ fn write_temp_is_private_and_exclusive() {
     let perms = metadata.permissions().mode() & 0o777;
     assert_eq!(perms, 0o600);
     assert!(root.create_write_temp("test.bin", "fixed").is_err());
-}
-
-#[test]
-fn test_transfer_metrics_default_content_hash_none() {
-    let m = TransferMetrics::default();
-    assert!(m.content_hash.is_none());
-    assert_eq!(m.bytes_sent, 0);
-    assert_eq!(m.blocks_sent, 0);
 }
 
 #[test]

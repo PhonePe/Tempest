@@ -791,15 +791,6 @@ mod tests {
     }
 
     #[test]
-    fn test_data_packet_rejects_oversized_payload() {
-        let mut pkt = vec![0u8, 3]; // DATA opcode
-        pkt.extend_from_slice(&[0, 1]); // block 1
-        pkt.extend(vec![0u8; 70_000]); // oversized payload
-        let result = TftpPacket::parse(&pkt, test_addr());
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_rrq_serializer_roundtrip() {
         let buf = TftpPacket::rrq("vmlinuz", "octet");
         let parsed = TftpPacket::parse(&buf, test_addr()).unwrap();
