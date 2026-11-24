@@ -632,9 +632,17 @@ async fn transfer_deadline_committed_write_ack_survives_expired_budget() {
 
 #[tokio::test]
 async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succeeds() {
+    // The client's two rounds must finish inside BUDGET - RECEIVE_DELAY, and a
+    // budget restarted at publication cannot end before RECEIVE_DELAY + BUDGET.
+    // Both margins are whole seconds so loaded CI runners cannot cross them.
+    const BUDGET: Duration = Duration::from_secs(4);
+    const RECEIVE_DELAY: Duration = Duration::from_secs(2);
     let directory = tempfile::tempdir().unwrap();
-    let state =
-        crate::server::TftpServer::new(transfer_deadline_config(directory.path(), 2)).state();
+    let state = crate::server::TftpServer::new(transfer_deadline_config(
+        directory.path(),
+        BUDGET.as_secs(),
+    ))
+    .state();
     state.active_transfers.store(1, Ordering::Release);
     let server = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
     let peer = server.local_addr().unwrap();
@@ -657,9 +665,8 @@ async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succee
     let client_flow = async {
         assert!(matches!(transfer_deadline_receive(&client, peer).await,
             TftpPacket::Oack(packet) if packet.options == vec![("timeout".into(), "255".into())]));
-        // Spend part of the original budget receiving: a fresh deadline at
-        // publication would finish after 3.5 seconds and fail the outer timeout.
-        tokio::time::sleep(Duration::from_millis(1500)).await;
+        // Spend part of the original budget receiving before publication.
+        tokio::time::sleep(RECEIVE_DELAY).await;
         for _ in 0..2 {
             client
                 .send_to(&TftpPacket::data(1, b"done"), peer)
@@ -674,16 +681,21 @@ async fn transfer_deadline_wrq_timeout255_dally_uses_remaining_budget_and_succee
             assert_eq!(state.active_transfers.load(Ordering::Acquire), 1);
         }
     };
-    let (result, ()) = tokio::time::timeout(Duration::from_millis(3450), async {
+    let start = Instant::now();
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(30), async {
         tokio::join!(transfer, client_flow)
     })
     .await
-    .expect("dally must use the remaining deadline, not 510 seconds or a fresh budget");
+    .expect("dally must use the remaining deadline, not 510 seconds");
+    assert!(
+        start.elapsed() < RECEIVE_DELAY + BUDGET,
+        "dally must use the remaining deadline, not a fresh budget"
+    );
     let metrics = result.expect("a durably published upload must succeed at the dally deadline");
     assert_eq!(metrics.bytes_sent, 4);
     assert_eq!(metrics.blocks_sent, 1);
     assert_eq!(metrics.retransmissions, 1);
-    assert!(metrics.duration().unwrap() >= Duration::from_secs(2));
+    assert!(metrics.duration().unwrap() >= BUDGET);
     assert_eq!(state.active_transfers.load(Ordering::Acquire), 0);
     assert_eq!(
         std::fs::read(directory.path().join("upload.bin")).unwrap(),
