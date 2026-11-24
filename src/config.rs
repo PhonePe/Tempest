@@ -2004,8 +2004,8 @@ mod tests {
 
     #[test]
     fn test_config_rejects_exposed_api_without_key() {
-        let dir = std::env::temp_dir().join("tempest_config_exposed_api_no_key_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2018,13 +2018,12 @@ mod tests {
 
         let error = TempestConfig::load(&config_path).unwrap_err().to_string();
         assert!(error.contains("api.api_key is required"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_audit_rotation_config_sanitized() {
-        let dir = std::env::temp_dir().join("tempest_config_audit_rotation_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2044,8 +2043,6 @@ mod tests {
         assert_eq!(config.audit.queue_max_bytes, 1024 * 1024);
         assert_eq!(config.audit.rotate_max_bytes, Some(1024));
         assert_eq!(config.audit.rotate_keep_segments, 10000);
-
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -2070,8 +2067,8 @@ mod tests {
 
     #[test]
     fn test_config_rejects_exposed_api_with_weak_key() {
-        let dir = std::env::temp_dir().join("tempest_config_exposed_api_weak_key_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2085,13 +2082,12 @@ mod tests {
 
         let error = TempestConfig::load(&config_path).unwrap_err().to_string();
         assert!(error.contains("at least 16 characters"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_config_allows_exposed_api_with_strong_key() {
-        let dir = std::env::temp_dir().join("tempest_config_exposed_api_strong_key_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2105,13 +2101,12 @@ mod tests {
 
         let config = TempestConfig::load(&config_path).unwrap();
         assert_eq!(config.api.api_key.as_deref(), Some("strong-api-key-123456"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_config_phase_window_size_validated() {
-        let dir = std::env::temp_dir().join("tempest_config_window_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2133,7 +2128,6 @@ mod tests {
         .unwrap();
         let error = TempestConfig::load(&config_path).unwrap_err();
         assert!(error.to_string().contains("max_window_size"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -2204,8 +2198,8 @@ mod tests {
 
     #[test]
     fn test_config_max_concurrent_transfers_capped() {
-        let dir = std::env::temp_dir().join("tempest_config_maxconc_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2220,7 +2214,6 @@ mod tests {
         .unwrap();
         let config = TempestConfig::load(&config_path).unwrap();
         assert!(config.server.max_concurrent_transfers <= 10_000);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -2363,8 +2356,8 @@ mod tests {
 
     #[test]
     fn test_config_max_boot_sessions_is_bounded() {
-        let dir = std::env::temp_dir().join("tempest_config_max_sessions_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2381,13 +2374,12 @@ mod tests {
         .unwrap();
         let config = TempestConfig::load(&config_path).unwrap();
         assert_eq!(config.server.max_boot_sessions, 1);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_config_max_write_size_capped() {
-        let dir = std::env::temp_dir().join("tempest_config_maxwrite_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2402,13 +2394,12 @@ mod tests {
         .unwrap();
         let config = TempestConfig::load(&config_path).unwrap();
         assert!(config.server.max_write_file_size <= 4 * 1024 * 1024 * 1024);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_config_max_request_body_capped() {
-        let dir = std::env::temp_dir().join("tempest_config_reqbody_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2421,13 +2412,12 @@ mod tests {
         .unwrap();
         let config = TempestConfig::load(&config_path).unwrap();
         assert!(config.api.max_request_body_bytes <= 10 * 1024 * 1024);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_config_env_api_key_resolution() {
-        let dir = std::env::temp_dir().join("tempest_config_envkey_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let temp_root = tempfile::tempdir().unwrap();
+        let dir = temp_root.path().to_path_buf();
         let config_path = dir.join("test.toml");
         std::fs::write(
             &config_path,
@@ -2439,7 +2429,6 @@ mod tests {
         .unwrap();
         let error = TempestConfig::load(&config_path).unwrap_err().to_string();
         assert!(error.contains("TEMPEST_NONEXISTENT_TEST_KEY"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
     #[test]
     fn removed_public_http_boot_settings_are_rejected() {

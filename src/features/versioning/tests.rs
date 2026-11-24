@@ -278,8 +278,8 @@ fn active_release_snapshot_indexes_chain_and_historical_ownership() {
 
 #[test]
 fn test_compute_sha256_streaming() {
-    let dir = std::env::temp_dir().join("tempest_test_sha256");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("test.bin");
     {
         let mut f = std::fs::File::create(&file_path).unwrap();
@@ -289,7 +289,6 @@ fn test_compute_sha256_streaming() {
     assert_eq!(hash.len(), 64); // SHA-256 hex = 64 chars
     let hash2 = compute_sha256(&file_path).unwrap();
     assert_eq!(hash, hash2);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -323,8 +322,8 @@ fn confined_release_never_hashes_a_replacement_for_an_opened_path() {
 #[test]
 fn test_hash_cache_stores_timestamp() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_cache");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("cached.bin");
     std::fs::write(&file_path, b"hello").unwrap();
 
@@ -335,15 +334,13 @@ fn test_hash_cache_stores_timestamp() {
     store.invalidate_hash(&file_path);
     let hash3 = store.content_hash(&file_path).unwrap();
     assert_eq!(hash1, hash3);
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_group_history_is_bounded() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_groups");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let file_path = dir.join("kernel");
     std::fs::write(&file_path, b"test kernel data").unwrap();
@@ -357,8 +354,6 @@ fn test_group_history_is_bounded() {
 
     let groups = store.list_groups();
     assert!(groups.len() <= MAX_GROUP_HISTORY);
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -377,8 +372,8 @@ fn test_pin_unpin_version() {
 #[test]
 fn test_resolve_file_for_transfer_returns_pinned_identity() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_resolve_pin_identity");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("kernel-v1.bin");
     std::fs::write(&file_path, b"kernel-v1").unwrap();
 
@@ -403,7 +398,6 @@ fn test_resolve_file_for_transfer_returns_pinned_identity() {
     assert_eq!(store.pinned_count("kernel", group.version_id), 1);
 
     store.unpin_version("kernel", group.version_id);
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -789,8 +783,8 @@ async fn test_session_preserving_cutover_serves_new_release_and_keeps_old_sessio
 #[test]
 fn test_rollback_fails_with_missing_files() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_rollback_missing");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let file_path = dir.join("kernel.bin");
     std::fs::write(&file_path, b"kernel data").unwrap();
@@ -803,15 +797,13 @@ fn test_rollback_fails_with_missing_files() {
 
     let result = store.rollback("group_1");
     assert!(result.is_err());
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_rollback_succeeds_with_existing_files() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_rollback_success");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let file_path = dir.join("initrd.img");
     std::fs::write(&file_path, b"initrd data").unwrap();
@@ -822,14 +814,12 @@ fn test_rollback_succeeds_with_existing_files() {
 
     let result = store.rollback("group_ok");
     assert!(result.is_ok());
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_sha256_consistency_large_file() {
-    let dir = std::env::temp_dir().join("tempest_test_sha256_large");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("large.bin");
     let data: Vec<u8> = (0..500_000).map(|i| (i % 256) as u8).collect();
     std::fs::write(&file_path, &data).unwrap();
@@ -838,8 +828,6 @@ fn test_sha256_consistency_large_file() {
     assert_eq!(hash.len(), 64);
     let hash2 = compute_sha256(&file_path).unwrap();
     assert_eq!(hash, hash2);
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -847,8 +835,8 @@ fn test_group_count_tracks_switches() {
     let store = VersionStore::new();
     assert_eq!(store.group_count(), 0);
 
-    let dir = std::env::temp_dir().join("tempest_test_group_count");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("test.bin");
     std::fs::write(&file_path, b"test").unwrap();
 
@@ -857,8 +845,6 @@ fn test_group_count_tracks_switches() {
 
     let _ = store.atomic_switch("g2".into(), vec![("test.bin".into(), file_path)]);
     assert_eq!(store.group_count(), 2);
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -871,8 +857,8 @@ fn test_list_versions_is_empty_for_new_store() {
 #[test]
 fn test_hash_cache_accepts_entries_below_its_limit() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_hash_cache_bound");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     for i in 0..5 {
         let path = dir.join(format!("file_{i}.bin"));
@@ -880,8 +866,6 @@ fn test_hash_cache_accepts_entries_below_its_limit() {
         let _ = store.content_hash(&path);
     }
     assert_eq!(store.hash_cache.len(), 5);
-
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -909,11 +893,10 @@ fn release_activation_keeps_hash_cache_at_its_declared_limit() {
 fn test_resolve_file_rejects_long_filename() {
     let store = VersionStore::new();
     let long_name = "a".repeat(2000);
-    let dir = std::env::temp_dir().join("tempest_test_longname");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let result = store.resolve_file(&long_name, &dir);
     assert!(result.is_err());
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -952,8 +935,8 @@ fn filename_errors_distinguish_aliases_from_length_for_active_and_pinned_reads()
 #[test]
 fn test_duplicate_group_id_rejected() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_dup_group");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("test.bin");
     std::fs::write(&file_path, b"test").unwrap();
 
@@ -965,14 +948,13 @@ fn test_duplicate_group_id_rejected() {
 
     let result2 = store.atomic_switch("group_1".into(), vec![("test.bin".into(), file_path)]);
     assert!(result2.is_err()); // Duplicate group_id
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn test_release_group_requires_unique_members() {
     let store = VersionStore::new();
-    let file_path = std::env::temp_dir().join("tempest_test_unique_member");
+    let temp_root = tempfile::tempdir().unwrap();
+    let file_path = temp_root.path().join("member");
     std::fs::write(&file_path, b"test").unwrap();
 
     assert!(store.atomic_switch("empty".into(), vec![]).is_err());
@@ -987,15 +969,13 @@ fn test_release_group_requires_unique_members() {
             )
             .is_err()
     );
-
-    std::fs::remove_file(file_path).ok();
 }
 
 #[test]
 fn test_activation_replaces_profile_release() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_profile_replace");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let kernel = dir.join("kernel");
     let initrd = dir.join("initrd");
     std::fs::write(&kernel, b"kernel").unwrap();
@@ -1014,8 +994,6 @@ fn test_activation_replaces_profile_release() {
     let active = store.list_versions();
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].logical_name, "kernel");
-
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[test]
@@ -1047,8 +1025,8 @@ fn test_affected_release_lookup_does_not_withdraw_profile() {
 #[test]
 fn test_same_logical_name_is_isolated_by_boot_profile() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_profile_isolation");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let focal_path = dir.join("focal-vmlinuz");
     let rhel_path = dir.join("rhel-vmlinuz");
@@ -1104,15 +1082,13 @@ fn test_same_logical_name_is_isolated_by_boot_profile() {
         &rhel_pin.logical_name,
         rhel_pin.version_id,
     );
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn test_rollback_is_scoped_to_boot_profile() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_profile_rollback");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let focal_v1 = dir.join("focal-v1");
     let focal_v2 = dir.join("focal-v2");
@@ -1169,16 +1145,14 @@ fn test_rollback_is_scoped_to_boot_profile() {
             .all(|version| version.boot_profile != "ubuntu-focal"
                 || version.logical_name == "vmlinuz")
     );
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn test_signed_manifest_verifies() {
     let signing_key_bytes = [7u8; 32];
     let store = VersionStore::new_with_manifest_signing_key(&signing_key_bytes);
-    let dir = std::env::temp_dir().join("tempest_test_signed_manifest");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let kernel_path = dir.join("kernel-v1.bin");
     let initrd_path = dir.join("initrd-v1.img");
@@ -1202,16 +1176,14 @@ fn test_signed_manifest_verifies() {
 
     let verifying_key = store.manifest_verifying_key().unwrap();
     assert!(group.manifest.verify(&verifying_key).unwrap());
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn test_manifest_verification_fails_when_tampered() {
     let signing_key_bytes = [9u8; 32];
     let store = VersionStore::new_with_manifest_signing_key(&signing_key_bytes);
-    let dir = std::env::temp_dir().join("tempest_test_manifest_tamper");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let file_path = dir.join("kernel.bin");
     std::fs::write(&file_path, b"kernel").unwrap();
@@ -1225,8 +1197,6 @@ fn test_manifest_verification_fails_when_tampered() {
     tampered.artifacts[0].content_hash = "00".repeat(32);
 
     assert!(!tampered.verify(&verifying_key).unwrap());
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -1308,8 +1278,8 @@ fn test_active_persisted_release_rejects_changed_artifact() {
 #[test]
 fn test_rollback_preserves_logical_name_binding() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_logical_name_rollback");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
 
     let v1_path = dir.join("kernel-v1.bin");
     let v2_path = dir.join("kernel-v2.bin");
@@ -1332,8 +1302,6 @@ fn test_rollback_preserves_logical_name_binding() {
         .resolve_file(logical_name, Path::new("."))
         .expect("rollback should preserve logical artifact name");
     assert_eq!(resolved, v1_path);
-
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -1504,13 +1472,12 @@ fn active_history_capacity_rejects_growth_but_allows_unpinned_replacement() {
 
 #[test]
 fn compute_sha256_accepts_file_below_default_limit() {
-    let dir = std::env::temp_dir().join("tempest_test_sha_default_limit");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("test.bin");
     std::fs::write(&file_path, b"test").unwrap();
     let result = compute_sha256(&file_path);
     assert!(result.is_ok());
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
@@ -1524,8 +1491,8 @@ fn hashing_enforces_the_limit_against_bytes_actually_read() {
 #[test]
 fn test_hash_cache_invalidate_recompute() {
     let store = VersionStore::new();
-    let dir = std::env::temp_dir().join("tempest_test_inval_recompute");
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp_root = tempfile::tempdir().unwrap();
+    let dir = temp_root.path().to_path_buf();
     let file_path = dir.join("file.bin");
     std::fs::write(&file_path, b"original").unwrap();
 
@@ -1536,5 +1503,4 @@ fn test_hash_cache_invalidate_recompute() {
     let hash2 = store.content_hash(&file_path).unwrap();
 
     assert_ne!(hash1, hash2);
-    std::fs::remove_dir_all(&dir).ok();
 }

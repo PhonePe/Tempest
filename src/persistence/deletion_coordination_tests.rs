@@ -1067,41 +1067,7 @@ async fn standalone_servers_enforce_attached_store_admission_without_cli_configu
         owner_state.ensure_persistence_admission().await.unwrap();
         // Loss poisons the same store for every public state sharing it, rather
         // than reconnecting on behalf of a new listener or resolver.
-        let connection = owner.serving_connection_id().await;
-        match owner.dialect {
-            DatabaseDialect::Postgres => {
-                sqlx::query("SELECT pg_terminate_backend($1)")
-                    .bind(connection as i32)
-                    .execute(&peer.pool)
-                    .await
-                    .unwrap();
-            }
-            DatabaseDialect::MySql => {
-                sqlx::query(&format!("KILL CONNECTION {connection}"))
-                    .execute(&peer.pool)
-                    .await
-                    .unwrap();
-                // KILL CONNECTION returns on acknowledgment, not on backend
-                // exit; wait for the row lock to be actually released before the
-                // NOWAIT admission that follows.
-                tokio::time::timeout(Duration::from_secs(30), async {
-                    loop {
-                        let remaining: i64 = sqlx::query_scalar(&format!(
-                            "SELECT COUNT(*) FROM information_schema.processlist WHERE id = {connection}"
-                        ))
-                        .fetch_one(&peer.pool)
-                        .await
-                        .unwrap();
-                        if remaining == 0 {
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(10)).await;
-                    }
-                })
-                .await
-                .expect("killed MySQL serving backend did not exit within 30 seconds");
-            }
-        }
+        kill_serving_connection(&owner, &peer).await;
         assert!(owner_state.ensure_persistence_admission().await.is_err());
         assert!(
             owner_state
@@ -1717,22 +1683,7 @@ async fn lost_namespace_connection_never_expires_or_forgets_a_live_reader() {
     with_fixture(|store, peer, identity| async move {
         store.ensure_serving_admission(true).await.unwrap();
         let reader = store.register_reader(&pin(&identity)).await.unwrap();
-        let connection = store.serving_connection_id().await;
-        match store.dialect {
-            DatabaseDialect::Postgres => {
-                sqlx::query("SELECT pg_terminate_backend($1)")
-                    .bind(connection as i32)
-                    .execute(&peer.pool)
-                    .await
-                    .unwrap();
-            }
-            DatabaseDialect::MySql => {
-                sqlx::query(&format!("KILL CONNECTION {connection}"))
-                    .execute(&peer.pool)
-                    .await
-                    .unwrap();
-            }
-        }
+        kill_serving_connection(&store, &peer).await;
         assert!(store.ensure_serving_admission(true).await.is_err());
         peer.ensure_serving_admission(true).await.unwrap();
         // A new exclusive owner is NOT authority to erase the old reader.
