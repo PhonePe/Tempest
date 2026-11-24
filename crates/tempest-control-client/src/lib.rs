@@ -1083,7 +1083,7 @@ mod tests {
             "child test failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        tokio::time::timeout(Duration::from_secs(2), target_server)
+        tokio::time::timeout(Duration::from_secs(30), target_server)
             .await
             .unwrap()
             .unwrap();

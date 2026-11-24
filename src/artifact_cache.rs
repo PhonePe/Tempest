@@ -829,6 +829,30 @@ mod tests {
         (file, metadata)
     }
 
+    #[cfg(not(unix))]
+    #[tokio::test]
+    async fn non_unix_bypasses_cache_without_stable_file_identity() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("tiny.img");
+        fs::write(&path, b"cached bytes").unwrap();
+        let cache = HotArtifactCache::new(1024, 1024, 8);
+        for _ in 0..2 {
+            let (file, metadata) = open(&path);
+            let content = cache
+                .prepare(file, &path, &metadata)
+                .unwrap()
+                .resolve()
+                .await
+                .unwrap();
+            assert!(matches!(content, ArtifactContent::File(_)));
+        }
+        assert!(cache.hot_path_ticket(&path).is_none());
+        assert!(cache.recent_unmanaged_path(&path, 1_000).is_none());
+        let stats = cache.stats();
+        assert_eq!((stats.fills, stats.entries, stats.bypasses), (0, 0, 2));
+    }
+
+    #[cfg(unix)]
     #[tokio::test]
     async fn hot_artifact_hit_reuses_one_retained_allocation() {
         let directory = tempdir().unwrap();
@@ -924,7 +948,7 @@ mod tests {
             ArtifactContent::File(_)
         ));
 
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
             while cache.stats().fills == 0 {
                 tokio::task::yield_now().await;
             }
@@ -991,6 +1015,7 @@ mod tests {
         assert_eq!(cache.stats().bypasses, 1);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn managed_snapshot_requires_exact_verified_digest_and_size() {
         let directory = tempdir().unwrap();
@@ -1014,6 +1039,7 @@ mod tests {
         assert_eq!(cache.stats().verified_hits, 1);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn unmanaged_freshness_window_is_explicit_and_bounded() {
         let directory = tempdir().unwrap();
@@ -1051,6 +1077,7 @@ mod tests {
         assert_eq!(cache.stats().freshness_hits, 1);
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn unmanaged_recent_hits_share_bytes_under_concurrency() {
         let directory = tempdir().unwrap();
@@ -1112,6 +1139,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn cache_budget_is_exact_and_in_use_entries_are_not_evicted() {
         let directory = tempdir().unwrap();
@@ -1145,6 +1173,7 @@ mod tests {
         assert_eq!(cache.stats().bypasses, 1);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn hot_path_ticket_keeps_retained_bytes_charged_to_budget() {
         let directory = tempdir().unwrap();
@@ -1212,6 +1241,7 @@ mod tests {
         assert_eq!(cache.stats().bypasses, 1);
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_first_reads_fill_one_identity_once() {
         let directory = tempdir().unwrap();

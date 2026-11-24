@@ -194,6 +194,11 @@ impl WindowState {
     /// Process an incoming ACK, returns true if the window advanced
     #[inline]
     pub fn process_ack(&mut self, ack_block: u16) -> WindowAdvance {
+        self.process_ack_at(ack_block, Instant::now())
+    }
+
+    #[inline]
+    fn process_ack_at(&mut self, ack_block: u16, now: Instant) -> WindowAdvance {
         // Combine is_valid_ack + block_ge into a single range check.
         // An ACK is valid if it falls within [window_start, window_start + blocks_in_flight).
         let in_window = self.block_ge(ack_block, self.window_start)
@@ -210,7 +215,9 @@ impl WindowState {
         // Karn's algorithm excludes ACKs for retransmitted data because their
         // RTT cannot be attributed to a particular send attempt.
         if self.adaptive_rto && self.rtt_sample_valid {
-            let rtt_us = self.last_ack_time.elapsed().as_micros() as f64;
+            let rtt_us = now
+                .saturating_duration_since(self.last_ack_time)
+                .as_micros() as f64;
             if self.srtt_us == 0.0 {
                 self.srtt_us = rtt_us;
                 self.rttvar_us = rtt_us / 2.0;
@@ -241,7 +248,7 @@ impl WindowState {
             self.absolute_next_block = self.absolute_window_start;
             self.blocks_in_flight = 0;
             self.retransmit_count = 0;
-            self.last_ack_time = Instant::now();
+            self.last_ack_time = now;
             WindowAdvance::FullWindow { acked: acked_count }
         } else if self.block_ge(ack_block, self.window_start) {
             // Partial window ACK — slide window forward
@@ -250,7 +257,7 @@ impl WindowState {
             self.window_start = ack_block.wrapping_add(1);
             self.absolute_window_start = self.absolute_window_start.saturating_add(acked as u64);
             self.retransmit_count = 0;
-            self.last_ack_time = Instant::now();
+            self.last_ack_time = now;
             WindowAdvance::Partial { acked }
         } else {
             WindowAdvance::Duplicate
@@ -433,9 +440,9 @@ mod tests {
 
         // A fast LAN sample must not silently turn the operator's two-second
         // retransmission interval into an aggressive subsecond deadline.
-        ws.last_ack_time = Instant::now() - Duration::from_millis(10);
+        let sampled_at = ws.last_ack_time + Duration::from_millis(10);
         assert!(matches!(
-            ws.process_ack(1),
+            ws.process_ack_at(1, sampled_at),
             WindowAdvance::FullWindow { acked: 1 }
         ));
         assert_eq!(ws.rto(), configured_floor);
@@ -451,10 +458,10 @@ mod tests {
         );
         let mut window = WindowState::with_policy(8, policy, 3);
         window.block_sent();
-        window.last_ack_time = Instant::now() - Duration::from_millis(10);
+        let sampled_at = window.last_ack_time + Duration::from_millis(10);
 
         assert!(matches!(
-            window.process_ack(1),
+            window.process_ack_at(1, sampled_at),
             WindowAdvance::FullWindow { acked: 1 }
         ));
         assert_eq!(window.rto(), Duration::from_millis(250));

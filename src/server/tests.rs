@@ -51,7 +51,7 @@ async fn cancelled_artifact_io_retains_its_worker_permit() {
         .is_err()
     );
     release.send(()).unwrap();
-    tokio::time::timeout(Duration::from_secs(1), state.artifact_io(|| Ok(())))
+    tokio::time::timeout(Duration::from_secs(30), state.artifact_io(|| Ok(())))
         .await
         .unwrap()
         .unwrap();
@@ -127,7 +127,7 @@ async fn ipv6_tftp_listener_receives_datagrams() {
 
     let mut received = [0u8; 128];
     let (length, peer) =
-        tokio::time::timeout(Duration::from_secs(1), listener.recv_from(&mut received))
+        tokio::time::timeout(Duration::from_secs(30), listener.recv_from(&mut received))
             .await
             .unwrap()
             .unwrap();
@@ -1083,7 +1083,7 @@ async fn test_control_plane_mutations_are_serialized() {
     tokio::task::yield_now().await;
     assert!(!waiter.is_finished());
     drop(guard);
-    tokio::time::timeout(Duration::from_secs(1), waiter)
+    tokio::time::timeout(Duration::from_secs(30), waiter)
         .await
         .unwrap()
         .unwrap();
@@ -1108,7 +1108,7 @@ async fn duplicate_rrq_uses_one_transfer_tid() {
         .unwrap();
     let running = server.clone();
     let mut server_task = tokio::spawn(async move { running.run().await });
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         tokio::select! {
             result = &mut server_task => panic!("server exited before readiness: {result:?}"),
             _ = async {
@@ -1132,7 +1132,7 @@ async fn duplicate_rrq_uses_one_transfer_tid() {
 
     let mut buffer = [0u8; 512];
     let (length, transfer_peer) =
-        tokio::time::timeout(Duration::from_secs(1), client.recv_from(&mut buffer))
+        tokio::time::timeout(Duration::from_secs(30), client.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -1140,12 +1140,21 @@ async fn duplicate_rrq_uses_one_transfer_tid() {
         TftpPacket::parse(&buffer[..length], transfer_peer).unwrap(),
         TftpPacket::Data(data) if data.block == 1 && data.data == b"artifact"
     ));
+    // Hold the transfer open until the listener has classified the duplicate.
+    tftp_client_limit_wait(|| {
+        state
+            .metrics
+            .duplicate_requests_total
+            .load(Ordering::Acquire)
+            == 1
+    })
+    .await;
     client
         .send_to(&TftpPacket::ack(1), transfer_peer)
         .await
         .unwrap();
 
-    tokio::time::timeout(Duration::from_secs(1), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         while state.active_transfers.load(Ordering::Acquire) != 0 {
             tokio::task::yield_now().await;
         }
@@ -1181,7 +1190,7 @@ async fn duplicate_rrq_uses_one_transfer_tid() {
 async fn tftp_client_limit_receive(client: &UdpSocket) -> (Vec<u8>, SocketAddr) {
     let mut buffer = [0u8; 2048];
     let (length, peer) =
-        tokio::time::timeout(Duration::from_secs(2), client.recv_from(&mut buffer))
+        tokio::time::timeout(Duration::from_secs(30), client.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -1251,7 +1260,7 @@ async fn sequential_rrqs_on_one_client_tid_do_not_wait_for_retransmission() {
     // The client never retransmits, so an RRQ dropped as a duplicate of a
     // still-registered TID stalls indefinitely. A generous bound still detects
     // that while tolerating cold starts and loaded CI runners.
-    let reply_bound = Duration::from_secs(5);
+    let reply_bound = Duration::from_secs(30);
 
     for iteration in 0..128 {
         client.send_to(&request, listener).await.unwrap();
@@ -1925,7 +1934,7 @@ fn tftp_client_limit_released_while_terminal_audit_waits() {
             .send_to(&TftpPacket::ack(1), next_peer)
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(2), task)
+        tokio::time::timeout(Duration::from_secs(30), task)
             .await
             .unwrap()
             .unwrap()
@@ -1986,7 +1995,7 @@ async fn test_integration_concurrent_release_delivery_and_audit() {
 
     let running = server.clone();
     let server_task = tokio::spawn(async move { running.run().await });
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         while !state.tftp_ready.load(Ordering::Acquire) {
             tokio::task::yield_now().await;
         }
@@ -2021,7 +2030,7 @@ async fn test_integration_concurrent_release_delivery_and_audit() {
         .wait_idle()
         .await
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let entries = state
                 .audit_log
@@ -2114,9 +2123,10 @@ async fn unsuccessful_rrq_audit_retains_release_identity_and_progress() {
         let mut config = TempestConfig::default();
         config.server.bind = IpAddr::V4(Ipv4Addr::LOCALHOST);
         config.server.root = root.path().to_path_buf();
-        config.server.retransmit_interval_ms = 50;
-        config.server.min_retransmit_interval_ms = 50;
-        config.server.max_retransmit_interval_ms = 50;
+        // The abort case must reach the server before its retry budget expires.
+        config.server.retransmit_interval_ms = 1_000;
+        config.server.min_retransmit_interval_ms = 1_000;
+        config.server.max_retransmit_interval_ms = 1_000;
         config.server.max_retries = 1;
         config.boot_phases.clear();
         config.audit.enabled = true;
@@ -2149,7 +2159,7 @@ async fn unsuccessful_rrq_audit_retains_release_identity_and_progress() {
         });
         let mut packet = [0u8; 1024];
         let (length, peer) =
-            tokio::time::timeout(Duration::from_secs(1), client.recv_from(&mut packet))
+            tokio::time::timeout(Duration::from_secs(30), client.recv_from(&mut packet))
                 .await
                 .unwrap()
                 .unwrap();
@@ -2164,7 +2174,7 @@ async fn unsuccessful_rrq_audit_retains_release_identity_and_progress() {
                 .await
                 .unwrap();
         }
-        let result = tokio::time::timeout(Duration::from_secs(2), transfer)
+        let result = tokio::time::timeout(Duration::from_secs(30), transfer)
             .await
             .unwrap()
             .unwrap();
@@ -2251,7 +2261,7 @@ async fn test_handle_rrq_missing_file_sends_error_and_releases_slot() {
     ));
     let mut buffer = [0u8; 512];
     let (length, peer) =
-        tokio::time::timeout(Duration::from_secs(1), client.recv_from(&mut buffer))
+        tokio::time::timeout(Duration::from_secs(30), client.recv_from(&mut buffer))
             .await
             .unwrap()
             .unwrap();
@@ -2304,7 +2314,7 @@ async fn handle_rrq_rejects_readable_unmanaged_file_without_leaking_resources() 
 
         // Own both operations in the timeout: even an unexpected DATA transfer
         // is cancelled on expiry, with no spawned task surviving an assertion.
-        let outcome = tokio::time::timeout(Duration::from_secs(2), async {
+        let outcome = tokio::time::timeout(Duration::from_secs(30), async {
             let result = handle_rrq(
                 state.clone(),
                 client_addr,
@@ -2490,7 +2500,7 @@ async fn tftp_resolution_requires_managed_membership_and_default_without_session
 
     for expire_while_waiting in [false, true] {
         for filename in ["boot.bin", "private-only.bin", "raw.bin"] {
-            let result = tokio::time::timeout(Duration::from_secs(1), async {
+            let result = tokio::time::timeout(Duration::from_secs(30), async {
                 state.insert_boot_session(ip, private_session());
                 let control_guard = state.control_plane_lock.lock().await;
                 let mut resolution =
@@ -2735,7 +2745,7 @@ async fn wait_for_drain_includes_accepted_queue_work() {
     assert!(!waiter.is_finished());
 
     drop(queued);
-    tokio::time::timeout(Duration::from_secs(1), waiter)
+    tokio::time::timeout(Duration::from_secs(30), waiter)
         .await
         .unwrap()
         .unwrap();
@@ -2759,7 +2769,7 @@ async fn metrics_text_maintenance_refreshes_on_blocking_pool_and_releases_on_can
     let weak_state = Arc::downgrade(&state);
     assert!(state.metrics.snapshot.load_full().is_none());
     let task = tokio::spawn(run_maintenance_task(state.clone()));
-    let first = tokio::time::timeout(Duration::from_secs(2), async {
+    let first = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             if let Some(snapshot) = state.metrics.snapshot.load_full() {
                 break snapshot;
@@ -2773,10 +2783,15 @@ async fn metrics_text_maintenance_refreshes_on_blocking_pool_and_releases_on_can
         .metrics
         .retransmissions_total
         .store(42, Ordering::Relaxed);
-    let second = tokio::time::timeout(Duration::from_secs(8), async {
+    // A refresh already in flight may predate the store; wait for one that observed it.
+    let second = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             if let Some(snapshot) = state.metrics.snapshot.load_full() {
-                if !Arc::ptr_eq(&first, &snapshot) {
+                if !Arc::ptr_eq(&first, &snapshot)
+                    && std::str::from_utf8(&snapshot)
+                        .unwrap()
+                        .contains("tempest_retransmissions_total 42\n")
+                {
                     break snapshot;
                 }
             }

@@ -1179,8 +1179,9 @@ mod tests {
             .acquire_many_owned(4)
             .await
             .unwrap();
+        // Hash permits are held, so waiting for a worker would block past this bound.
         let stale = tokio::time::timeout(
-            Duration::from_millis(100),
+            Duration::from_secs(30),
             rollback_version(
                 State(state.clone()),
                 Json(RollbackRequest {

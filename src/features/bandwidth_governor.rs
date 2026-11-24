@@ -168,7 +168,6 @@ pub fn spawn_refill_task(governor: Arc<BandwidthGovernor>) -> tokio::task::JoinH
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::time::Instant;
 
     #[test]
     fn test_governor_creation() {
@@ -242,23 +241,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_acquire_blocks_until_tokens_available() {
-        let gov = Arc::new(BandwidthGovernor::new(1_000_000, true));
+        let gov = BandwidthGovernor::new(1_000_000, true);
         let cap = gov.burst_cap();
         gov.acquire(cap as usize).await;
 
-        let gov_clone = gov.clone();
-        let handle = tokio::spawn(async move {
-            let start = Instant::now();
-            gov_clone.acquire(100).await;
-            start.elapsed()
-        });
-
-        tokio::time::sleep(Duration::from_millis(5)).await;
+        let mut acquire = tokio_test::task::spawn(gov.acquire(100));
+        assert!(acquire.poll().is_pending());
+        assert!(acquire.poll().is_pending());
 
         gov.refill();
-
-        let elapsed = handle.await.unwrap();
-        assert!(elapsed >= Duration::from_millis(3));
+        assert!(acquire.is_woken());
+        assert!(acquire.poll().is_ready());
     }
 
     // Paused time makes refill ticks deterministic under host load.
@@ -278,12 +271,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_concurrent_acquirers_bounded_by_ceiling() {
         let gov = Arc::new(BandwidthGovernor::new(10_000_000, true)); // 10 MB/s
         let refill_handle = spawn_refill_task(gov.clone());
 
-        let start = Instant::now();
         let mut handles = Vec::new();
 
         for _ in 0..10 {
@@ -293,15 +285,14 @@ mod tests {
             }));
         }
 
-        for h in handles {
-            h.await.unwrap();
-        }
-
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed < Duration::from_secs(5),
-            "Took too long: {elapsed:?}"
-        );
+        // Paused time: this bound is in virtual refill time, not host scheduling.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for h in handles {
+                h.await.unwrap();
+            }
+        })
+        .await
+        .expect("concurrent acquirers exceeded the virtual-time ceiling");
 
         refill_handle.abort();
     }

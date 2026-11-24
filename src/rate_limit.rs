@@ -50,17 +50,21 @@ impl PerIpRateLimiter {
 
     /// Returns true if the request should be allowed.
     pub fn check(&self, ip: std::net::IpAddr) -> bool {
+        self.check_at(ip, Instant::now())
+    }
+
+    fn check_at(&self, ip: std::net::IpAddr, now: Instant) -> bool {
         // Zero is an explicit operator opt-out for trusted benchmark networks.
         // The secure default remains enabled and no address state is retained.
         if self.max_per_sec == 0 {
             return true;
         }
         if let Some(mut entry) = self.counters.get_mut(&ip) {
-            return self.update_counter(ip, &mut entry);
+            return self.update_counter(ip, &mut entry, now);
         }
 
         if self.tracked_entries.load(Ordering::Acquire) >= self.max_entries {
-            self.reclaim_expired(64);
+            self.reclaim_expired(64, now);
         }
         #[allow(
             deprecated,
@@ -76,7 +80,6 @@ impl PerIpRateLimiter {
             return false;
         }
 
-        let now = Instant::now();
         let mut inserted = false;
         let mut entry = match self.counters.entry(ip) {
             dashmap::mapref::entry::Entry::Occupied(entry) => {
@@ -88,7 +91,7 @@ impl PerIpRateLimiter {
                 entry.insert((now, 0))
             }
         };
-        let allowed = self.update_counter(ip, &mut entry);
+        let allowed = self.update_counter(ip, &mut entry, now);
         drop(entry); // Reclamation takes the queue lock before a map shard.
         if inserted {
             self.expiry_candidates.lock().push_back(ip);
@@ -96,9 +99,13 @@ impl PerIpRateLimiter {
         allowed
     }
 
-    fn update_counter(&self, ip: std::net::IpAddr, entry: &mut (Instant, u32)) -> bool {
-        let now = Instant::now();
-        if now.duration_since(entry.0) >= Duration::from_secs(1) {
+    fn update_counter(
+        &self,
+        ip: std::net::IpAddr,
+        entry: &mut (Instant, u32),
+        now: Instant,
+    ) -> bool {
+        if now.saturating_duration_since(entry.0) >= Duration::from_secs(1) {
             entry.0 = now;
             entry.1 = 1;
             true
@@ -122,23 +129,27 @@ impl PerIpRateLimiter {
 
     /// Reclaims expired one-second windows, subject to the maintenance threshold.
     pub fn cleanup_stale(&self, threshold: usize) {
+        self.cleanup_stale_at(threshold, Instant::now());
+    }
+
+    fn cleanup_stale_at(&self, threshold: usize, now: Instant) {
         if self.tracked_entries.load(Ordering::Acquire) >= threshold {
             // Release the insertion queue lock between bounded maintenance
             // batches instead of holding it across a full-capacity map.
             let candidates = self.tracked_entries.load(Ordering::Acquire);
             for _ in (0..candidates).step_by(64) {
-                self.reclaim_expired(64);
+                self.reclaim_expired(64, now);
             }
         }
     }
 
-    fn reclaim_expired(&self, maximum: usize) {
+    fn reclaim_expired(&self, maximum: usize, now: Instant) {
         // Never queue ingress behind another reclamation pass or scan the full
         // map at capacity. Rotating live candidates makes subsequent scans advance.
         let Some(mut candidates) = self.expiry_candidates.try_lock() else {
             return;
         };
-        let cutoff = Instant::now() - Duration::from_secs(1);
+        let cutoff = now - Duration::from_secs(1);
         for _ in 0..maximum.min(candidates.len()) {
             let ip = candidates.pop_front().unwrap();
             if self
@@ -161,16 +172,17 @@ mod tests {
 
     #[test]
     fn capacity_reclaims_expired_windows_without_resetting_live_quotas() {
+        let now = Instant::now();
         let limiter = PerIpRateLimiter::with_max_entries(1, "test", 2);
         let old = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
         let live = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2));
         let new = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 3));
-        assert!(limiter.check(old));
-        assert!(limiter.check(live));
-        assert!(!limiter.check(new));
-        limiter.counters.get_mut(&old).unwrap().0 = Instant::now() - Duration::from_secs(2);
-        assert!(limiter.check(new));
-        assert!(!limiter.check(live));
+        assert!(limiter.check_at(old, now));
+        assert!(limiter.check_at(live, now));
+        assert!(!limiter.check_at(new, now));
+        limiter.counters.get_mut(&old).unwrap().0 = now - Duration::from_secs(2);
+        assert!(limiter.check_at(new, now));
+        assert!(!limiter.check_at(live, now));
         assert_eq!(limiter.counters.len(), 2);
         assert_eq!(limiter.expiry_candidates.lock().len(), 2);
         assert_eq!(limiter.tracked_entries.load(Ordering::Acquire), 2);
@@ -178,17 +190,18 @@ mod tests {
 
     #[test]
     fn capacity_reclamation_rotates_live_candidates_and_bounds_work() {
+        let now = Instant::now();
         let limiter = PerIpRateLimiter::with_max_entries(1, "test", 128);
         for suffix in 0..128 {
-            assert!(limiter.check(Ipv4Addr::new(192, 0, 2, suffix).into()));
+            assert!(limiter.check_at(Ipv4Addr::new(192, 0, 2, suffix).into(), now));
         }
         let old = Ipv4Addr::new(192, 0, 2, 127).into();
-        limiter.counters.get_mut(&old).unwrap().0 = Instant::now() - Duration::from_secs(2);
+        limiter.counters.get_mut(&old).unwrap().0 = now - Duration::from_secs(2);
         let new = Ipv4Addr::new(192, 0, 2, 128).into();
-        assert!(!limiter.check(new));
-        assert!(limiter.check(new));
+        assert!(!limiter.check_at(new, now));
+        assert!(limiter.check_at(new, now));
         for suffix in 0..127 {
-            assert!(!limiter.check(Ipv4Addr::new(192, 0, 2, suffix).into()));
+            assert!(!limiter.check_at(Ipv4Addr::new(192, 0, 2, suffix).into(), now));
         }
         assert_eq!(limiter.expiry_candidates.lock().len(), 128);
     }
@@ -204,11 +217,12 @@ mod tests {
 
     #[test]
     fn test_blocks_over_limit() {
+        let now = Instant::now();
         let rl = PerIpRateLimiter::new(2, "test");
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        assert!(rl.check(ip));
-        assert!(rl.check(ip));
-        assert!(!rl.check(ip));
+        assert!(rl.check_at(ip, now));
+        assert!(rl.check_at(ip, now));
+        assert!(!rl.check_at(ip, now));
     }
 
     #[test]
@@ -234,11 +248,12 @@ mod tests {
 
     #[test]
     fn test_rate_limiter_bounded_entries() {
+        let now = Instant::now();
         let rl = PerIpRateLimiter::with_max_entries(1000, "test", 32);
         for suffix in 0..32 {
-            assert!(rl.check(IpAddr::V4(Ipv4Addr::new(10, 0, 0, suffix))));
+            assert!(rl.check_at(IpAddr::V4(Ipv4Addr::new(10, 0, 0, suffix)), now));
         }
-        assert!(!rl.check(IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1))));
+        assert!(!rl.check_at(IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1)), now));
         assert_eq!(rl.tracked_entries.load(Ordering::Acquire), 32);
         assert_eq!(rl.counters.len(), 32);
     }
@@ -247,6 +262,7 @@ mod tests {
     fn concurrent_new_ips_cannot_exceed_capacity() {
         use std::sync::{Arc, Barrier};
 
+        let now = Instant::now();
         let limiter = Arc::new(PerIpRateLimiter::with_max_entries(1000, "test", 64));
         let barrier = Arc::new(Barrier::new(256));
         let handles: Vec<_> = (0..256u16)
@@ -256,7 +272,7 @@ mod tests {
                 std::thread::spawn(move || {
                     barrier.wait();
                     let octets = suffix.to_be_bytes();
-                    limiter.check(IpAddr::V4(Ipv4Addr::new(10, 1, octets[0], octets[1])))
+                    limiter.check_at(IpAddr::V4(Ipv4Addr::new(10, 1, octets[0], octets[1])), now)
                 })
             })
             .collect();
@@ -273,34 +289,37 @@ mod tests {
 
     #[test]
     fn test_rate_limiter_blocks_after_quota_exhausted() {
+        let now = Instant::now();
         let rl = PerIpRateLimiter::new(1, "test");
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        assert!(rl.check(ip));
-        assert!(!rl.check(ip));
+        assert!(rl.check_at(ip, now));
+        assert!(!rl.check_at(ip, now));
     }
 
     #[test]
     fn test_rate_limiter_per_ip_isolation() {
+        let now = Instant::now();
         let rl = PerIpRateLimiter::new(2, "test");
         let ip1 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
         let ip2 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
-        assert!(rl.check(ip1));
-        assert!(rl.check(ip1));
-        assert!(!rl.check(ip1));
-        assert!(rl.check(ip2));
-        assert!(rl.check(ip2));
-        assert!(!rl.check(ip2));
+        assert!(rl.check_at(ip1, now));
+        assert!(rl.check_at(ip1, now));
+        assert!(!rl.check_at(ip1, now));
+        assert!(rl.check_at(ip2, now));
+        assert!(rl.check_at(ip2, now));
+        assert!(!rl.check_at(ip2, now));
     }
 
     #[test]
     fn test_rate_limiter_rejected_count() {
+        let now = Instant::now();
         let rl = PerIpRateLimiter::new(1, "test");
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
         assert_eq!(rl.rejected_count(), 0);
-        assert!(rl.check(ip));
-        assert!(!rl.check(ip));
+        assert!(rl.check_at(ip, now));
+        assert!(!rl.check_at(ip, now));
         assert_eq!(rl.rejected_count(), 1);
-        assert!(!rl.check(ip));
+        assert!(!rl.check_at(ip, now));
         assert_eq!(rl.rejected_count(), 2);
     }
 
@@ -311,38 +330,42 @@ mod tests {
         let now = Instant::now();
         rl.counters.insert(ip, (now, u32::MAX - 1));
 
-        assert!(!rl.check(ip));
+        assert!(!rl.check_at(ip, now));
         assert_eq!(rl.counters.get(&ip).unwrap().1, u32::MAX);
-        assert!(!rl.check(ip));
+        assert!(!rl.check_at(ip, now));
         assert_eq!(rl.counters.get(&ip).unwrap().1, u32::MAX);
     }
 
     #[test]
     fn test_rate_limiter_rejects_at_max_entries() {
         // An injected small cap exercises the production capacity branch cheaply.
+        let now = Instant::now();
         let rl_small = PerIpRateLimiter::with_max_entries(1000, "test", 3);
         let ip1 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
         let ip2 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
         let ip3 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 3));
         let ip4 = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 4));
 
-        assert!(rl_small.check(ip1));
-        assert!(rl_small.check(ip2));
-        assert!(rl_small.check(ip3));
-        assert!(!rl_small.check(ip4));
+        assert!(rl_small.check_at(ip1, now));
+        assert!(rl_small.check_at(ip2, now));
+        assert!(rl_small.check_at(ip3, now));
+        assert!(!rl_small.check_at(ip4, now));
         assert_eq!(rl_small.rejected_count(), 1);
-        assert!(rl_small.check(ip1));
+        assert!(rl_small.check_at(ip1, now));
     }
 
     #[test]
     fn test_rate_limiter_cleanup_removes_old() {
+        let now = Instant::now();
         let rl = PerIpRateLimiter::new(100, "test");
         for i in 0..10u8 {
             let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, i));
-            rl.check(ip);
+            rl.check_at(ip, now);
         }
         assert_eq!(rl.counters.len(), 10);
-        rl.cleanup_stale(5);
+        rl.cleanup_stale_at(5, now);
         assert_eq!(rl.counters.len(), 10);
+        rl.cleanup_stale_at(5, now + Duration::from_secs(1));
+        assert!(rl.counters.is_empty());
     }
 }

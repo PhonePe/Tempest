@@ -17,6 +17,14 @@ fn parse_example(relative: &str) -> TempestConfig {
     toml::from_str(&content).unwrap()
 }
 
+/// Read a repository file with normalized line endings. Some checkouts
+/// materialize text files with CRLF; structural assertions must not depend on
+/// the checkout's line-ending representation.
+fn repository_text(relative: &str) -> String {
+    let content = std::fs::read_to_string(repository_path(relative)).unwrap();
+    content.replace("\r\n", "\n")
+}
+
 #[test]
 fn dual_plane_examples_keep_service_addresses_and_state_explicit() {
     let l2 = parse_example("deploy/container/tempest-l2.toml.example");
@@ -45,9 +53,7 @@ fn dual_plane_examples_keep_service_addresses_and_state_explicit() {
 
 #[test]
 fn compose_profile_preserves_tftp_and_privilege_boundaries() {
-    let compose =
-        std::fs::read_to_string(repository_path("deploy/container/compose.dual-plane.yml"))
-            .unwrap();
+    let compose = repository_text("deploy/container/compose.dual-plane.yml");
 
     assert_eq!(compose.matches("network_mode: host").count(), 1);
     assert!(compose.contains("cap_drop:\n    - ALL"));
@@ -60,10 +66,8 @@ fn compose_profile_preserves_tftp_and_privilege_boundaries() {
 
 #[test]
 fn https_profile_includes_required_environment_template() {
-    let compose =
-        std::fs::read_to_string(repository_path("deploy/container/https/compose.yml")).unwrap();
-    let environment =
-        std::fs::read_to_string(repository_path("deploy/container/https/.env.example")).unwrap();
+    let compose = repository_text("deploy/container/https/compose.yml");
+    let environment = repository_text("deploy/container/https/.env.example");
 
     for variable in ["TEMPEST_TLS_IMAGE", "TEMPEST_TLS_CONFIG", "TEMPEST_TLS_DIR"] {
         assert!(compose.contains(&format!("${{{variable}:?")));
@@ -77,11 +81,8 @@ fn https_profile_includes_required_environment_template() {
 
 #[test]
 fn https_profile_uses_unprivileged_port_without_relaxing_host_security() {
-    let compose =
-        std::fs::read_to_string(repository_path("deploy/container/https/compose.yml")).unwrap();
-    let nginx =
-        std::fs::read_to_string(repository_path("deploy/container/https/nginx.conf.example"))
-            .unwrap();
+    let compose = repository_text("deploy/container/https/compose.yml");
+    let nginx = repository_text("deploy/container/https/nginx.conf.example");
 
     let listeners: Vec<_> = nginx
         .lines()
@@ -111,9 +112,7 @@ fn https_profile_uses_unprivileged_port_without_relaxing_host_security() {
 
 #[test]
 fn https_profile_exposes_only_bearer_artifacts_and_preserves_client_identity() {
-    let nginx =
-        std::fs::read_to_string(repository_path("deploy/container/https/nginx.conf.example"))
-            .unwrap();
+    let nginx = repository_text("deploy/container/https/nginx.conf.example");
     let locations: Vec<_> = nginx
         .lines()
         .map(str::trim)

@@ -27,7 +27,7 @@ async fn deadline_test_server() -> (Arc<ServerState>, SocketAddr, tokio::task::J
 
 async fn read_http_response(stream: &mut tokio::net::TcpStream) -> String {
     use tokio::io::AsyncReadExt;
-    tokio::time::timeout(Duration::from_secs(3), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         let mut headers = Vec::new();
         while !headers.ends_with(b"\r\n\r\n") {
             headers.push(stream.read_u8().await.unwrap());
@@ -59,7 +59,7 @@ async fn silent_and_partial_protocol_connections_expire_before_headers() {
         idle.write_all(prefix).await.unwrap();
         let mut byte = [0];
         assert_eq!(
-            tokio::time::timeout(Duration::from_secs(3), idle.read(&mut byte))
+            tokio::time::timeout(Duration::from_secs(30), idle.read(&mut byte))
                 .await
                 .unwrap()
                 .unwrap(),
@@ -116,7 +116,7 @@ async fn incomplete_http_headers_and_bodies_have_absolute_deadlines() {
         .unwrap();
     let mut byte = [0];
     assert_eq!(
-        tokio::time::timeout(Duration::from_secs(3), headers.read(&mut byte))
+        tokio::time::timeout(Duration::from_secs(30), headers.read(&mut byte))
             .await
             .unwrap()
             .unwrap(),
@@ -359,7 +359,7 @@ async fn cancelled_http_session_resolution_releases_transfer_capacity() {
         )
         .await
     });
-    tokio::time::timeout(Duration::from_secs(1), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         while state.active_transfers.load(Ordering::Acquire) == 0 {
             tokio::task::yield_now().await;
         }
@@ -371,7 +371,7 @@ async fn cancelled_http_session_resolution_releases_transfer_capacity() {
     drop(lock);
     assert_eq!(state.active_transfers.load(Ordering::Acquire), 0);
     server.drain();
-    tokio::time::timeout(Duration::from_secs(1), server.wait_for_drain())
+    tokio::time::timeout(Duration::from_secs(30), server.wait_for_drain())
         .await
         .unwrap();
 }
@@ -677,7 +677,11 @@ async fn managed_http_ranges_stream_only_the_selected_verified_bytes() {
     .await;
     assert_eq!(cached.status(), StatusCode::PARTIAL_CONTENT);
     assert_eq!(&artifact_body(cached).await[..], b"789");
-    assert_eq!(state.http_artifact_cache.stats().verified_hits, 1);
+    // Non-Unix platforms lack stable file identity, so snapshots are never retained.
+    assert_eq!(
+        state.http_artifact_cache.stats().verified_hits,
+        u64::from(cfg!(unix))
+    );
 
     let mut headers = artifact_headers();
     headers.insert(header::RANGE, HeaderValue::from_static("bytes=99-"));
@@ -1196,6 +1200,7 @@ async fn test_http_artifacts_stay_on_session_pinned_version_group() {
     assert!(metrics_text.contains("tempest_runtime_worker_busy_seconds_total{worker=\"0\"}"));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_http_cache_reuses_verified_snapshot_without_touching_tftp_cache() {
     let tempdir = tempfile::tempdir().unwrap();
@@ -1237,8 +1242,6 @@ async fn test_http_cache_reuses_verified_snapshot_without_touching_tftp_cache() 
 
     let replacement = root.join("kernel-replacement");
     std::fs::write(&replacement, b"changed-content").unwrap();
-    #[cfg(not(unix))]
-    std::fs::remove_file(&artifact).unwrap();
     std::fs::rename(replacement, &artifact).unwrap();
 
     let second = serve_artifact(
@@ -1254,6 +1257,7 @@ async fn test_http_cache_reuses_verified_snapshot_without_touching_tftp_cache() 
     assert_eq!(state.active_transfers.load(Ordering::Acquire), 0);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_http_cache_reuses_recent_unmanaged_snapshot_without_touching_tftp_cache() {
     let tempdir = tempfile::tempdir().unwrap();

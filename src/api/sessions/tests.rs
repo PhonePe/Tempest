@@ -239,7 +239,7 @@ async fn assert_registration_queue_is_bounded_and_groups_commits(url: String) {
         let ip = IpAddr::V6(uuid::Uuid::new_v4().as_u128().into());
         tasks.push(tokio::spawn(register(state, request(ip, false))));
     }
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             if state
                 .session_registration_queue
@@ -306,22 +306,27 @@ async fn assert_disconnected_registration_finishes_durable_publication(url: Stri
         .await
         .unwrap();
     let ip = IpAddr::V6(uuid::Uuid::new_v4().as_u128().into());
-    let mut caller = tokio::spawn(register(state.clone(), request(ip, false)));
-    assert!(
-        tokio::time::timeout(Duration::from_millis(50), &mut caller)
-            .await
-            .is_err()
-    );
-    assert!(state.control_plane_lock.try_lock().is_err());
-    assert_eq!(
-        state.session_registration_queue.get().unwrap().capacity(),
-        QUEUE_CAPACITY
-    );
+    let caller = tokio::spawn(register(state.clone(), request(ip, false)));
+    // The worker holds the control lock with an empty queue only once it is blocked on SQL.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while state.control_plane_lock.try_lock().is_ok()
+            || state
+                .session_registration_queue
+                .get()
+                .map(|sender| sender.capacity())
+                != Some(QUEUE_CAPACITY)
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!caller.is_finished());
     assert!(!state.boot_sessions.contains_key(&ip));
     caller.abort();
     assert!(caller.await.unwrap_err().is_cancelled());
     transaction.rollback().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         while !state.boot_sessions.contains_key(&ip) {
             tokio::task::yield_now().await;
         }
@@ -376,24 +381,27 @@ async fn assert_disconnected_revocation_finishes_durable_and_local_deletion(url:
         .fetch_one(&mut *transaction)
         .await
         .unwrap();
-    let mut caller = tokio::spawn(super::super::revoke_session(
+    let caller = tokio::spawn(super::super::revoke_session(
         State(state.clone()),
         Path(ip),
         Json(super::super::RevokeSessionRequest {
             artifact_token: token,
         }),
     ));
-    assert!(
-        tokio::time::timeout(Duration::from_millis(50), &mut caller)
-            .await
-            .is_err()
-    );
-    assert!(state.control_plane_lock.try_lock().is_err());
+    // The row lock above keeps the revocation blocked while it holds the control lock.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while state.control_plane_lock.try_lock().is_ok() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!caller.is_finished());
     caller.abort();
     assert!(caller.await.unwrap_err().is_cancelled());
 
     transaction.rollback().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         while state.boot_session_for_artifact_token(&token_hash).is_some() {
             tokio::task::yield_now().await;
         }

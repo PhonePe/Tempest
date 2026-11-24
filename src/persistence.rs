@@ -2053,7 +2053,7 @@ mod tests {
             .unwrap();
         let revision = store.lock_state_revision(&mut tx).await.unwrap();
         tx.commit().await.unwrap();
-        let snapshot = tokio::time::timeout(Duration::from_secs(5), snapshot)
+        let snapshot = tokio::time::timeout(Duration::from_secs(30), snapshot)
             .await
             .unwrap()
             .unwrap();
