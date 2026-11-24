@@ -61,13 +61,13 @@ futures-util = { version = "0.3", optional = true }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+toml = "1"
 
 # Logging & Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-opentelemetry = { version = "0.32", default-features = false, features = ["metrics"] }
-opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics", "experimental_metrics_custom_reader"] }
+opentelemetry = { version = "0.33", default-features = false, features = ["metrics"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["metrics", "experimental_metrics_custom_reader"] }
 
 # HTTP API
 axum = { version = "0.8", features = ["json"] }
@@ -122,7 +122,7 @@ criterion = { version = "0.5", default-features = false }
 tempfile = "3"
 tokio-test = "0.4"
 tower = "0.5"
-opentelemetry_sdk = { version = "0.32", default-features = false, features = ["metrics", "testing", "experimental_metrics_custom_reader"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["metrics", "testing", "experimental_metrics_custom_reader"] }
 
 [[bench]]
 name = "protocol_hotpaths"
